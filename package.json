@@ -10,6 +10,9 @@
     "toyo:check": "tsx ./scripts/toyo-check.ts",
     "toyo:run": "tsx ./scripts/toyo-run.ts",
     "toyo:export-enrollment": "tsx ./scripts/toyo-export-enrollment.ts",
+    "toyo:syllabus": "tsx ./scripts/toyo-fetch-syllabus.ts",
+    "toyo:calendar": "tsx ./scripts/toyo-fetch-calendar.ts",
+    "toyo:announcements": "tsx ./scripts/toyo-fetch-announcements.ts",
     "toyo:sync": "tsx ./scripts/toyo-sync.ts"
   },
   "keywords": [],

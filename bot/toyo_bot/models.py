@@ -41,8 +41,6 @@ class Assignment:
     title: str
     due_at: datetime | None
     status: str
-    source_url: str | None
-    notes: tuple[str, ...]
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Assignment":
@@ -52,27 +50,44 @@ class Assignment:
             course_name=str(payload["courseName"]),
             title=str(payload["title"]),
             due_at=datetime.fromisoformat(str(due_at_raw)) if due_at_raw else None,
-            status=str(payload["status"]),
-            source_url=str(payload["sourceUrl"]) if payload.get("sourceUrl") else None,
-            notes=tuple(str(note) for note in payload.get("notes", [])),
+            status=str(payload.get("status", "unknown")),
         )
 
 
 @dataclass(frozen=True, slots=True)
-class NextClassNotes:
-    checked_at: str | None
-    first_topic: str | None
-    syllabus_points: tuple[str, ...]
-    raw_markdown_path: str | None
+class Announcement:
+    announcement_id: str
+    category: str  # '休講' | '補講' | '教室変更' | 'その他'
+    course_name_hint: str | None
+    title: str
+    target_date: str | None  # YYYY-MM-DD
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "NextClassNotes":
+    def from_dict(cls, payload: dict[str, Any]) -> "Announcement":
         return cls(
-            checked_at=str(payload["checkedAt"]) if payload.get("checkedAt") else None,
-            first_topic=str(payload["firstTopic"]) if payload.get("firstTopic") else None,
-            syllabus_points=tuple(str(item) for item in payload.get("syllabusPoints", [])),
-            raw_markdown_path=(
-                str(payload["rawMarkdownPath"]) if payload.get("rawMarkdownPath") else None
+            announcement_id=str(payload["announcementId"]),
+            category=str(payload.get("category", "その他")),
+            course_name_hint=str(payload["courseNameHint"]) if payload.get("courseNameHint") else None,
+            title=str(payload["title"]),
+            target_date=str(payload["targetDate"]) if payload.get("targetDate") else None,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DetailedClassSummary:
+    class_info: ClassSummary
+    related_assignments: tuple[Assignment, ...]
+    related_announcements: tuple[Announcement, ...]
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "DetailedClassSummary":
+        return cls(
+            class_info=ClassSummary.from_dict(payload["classInfo"]),
+            related_assignments=tuple(
+                Assignment.from_dict(item) for item in payload.get("relatedAssignments", [])
+            ),
+            related_announcements=tuple(
+                Announcement.from_dict(item) for item in payload.get("relatedAnnouncements", [])
             ),
         )
 
@@ -80,46 +95,43 @@ class NextClassNotes:
 @dataclass(frozen=True, slots=True)
 class Summary:
     generated_at: datetime
-    timezone: str
     next_class: ClassSummary | None
-    next_class_notes: NextClassNotes | None
-    today_classes: tuple[ClassSummary, ...]
+    today_classes: tuple[DetailedClassSummary, ...]
+    tomorrow_classes: tuple[DetailedClassSummary, ...]
     upcoming_assignments: tuple[Assignment, ...]
-    errors: tuple[str, ...]
-    portal_available: bool
+    announcements: tuple[Announcement, ...]
+    portal_fetch_status: str  # 'success' | 'error' | 'empty'
     portal_fetched_at: str | None
-    toyonet_ace_available: bool
-    toyonet_ace_fetched_at: str | None
+    ace_available: bool
+    ace_fetched_at: str | None
+    announcements_available: bool
+    errors: tuple[str, ...]
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Summary":
         source_status = payload.get("sourceStatus", {})
         portal = source_status.get("portal", {})
-        toyonet_ace = source_status.get("toyonetAce", {})
+        ace = source_status.get("toyonetAce", {})
         next_class_payload = payload.get("nextClass")
-        next_class_notes_payload = payload.get("nextClassNotes")
         return cls(
             generated_at=datetime.fromisoformat(str(payload["generatedAt"])),
-            timezone=str(payload["timezone"]),
             next_class=ClassSummary.from_dict(next_class_payload) if next_class_payload else None,
-            next_class_notes=(
-                NextClassNotes.from_dict(next_class_notes_payload)
-                if next_class_notes_payload
-                else None
-            ),
             today_classes=tuple(
-                ClassSummary.from_dict(item) for item in payload.get("todayClasses", [])
+                DetailedClassSummary.from_dict(item) for item in payload.get("todayClasses", [])
+            ),
+            tomorrow_classes=tuple(
+                DetailedClassSummary.from_dict(item) for item in payload.get("tomorrowClasses", [])
             ),
             upcoming_assignments=tuple(
                 Assignment.from_dict(item) for item in payload.get("upcomingAssignments", [])
             ),
+            announcements=tuple(
+                Announcement.from_dict(item) for item in payload.get("announcements", [])
+            ),
+            portal_fetch_status=str(portal.get("fetchStatus", "unknown")),
+            portal_fetched_at=str(portal["fetchedAt"]) if portal.get("fetchedAt") else None,
+            ace_available=bool(ace.get("available")),
+            ace_fetched_at=str(ace["fetchedAt"]) if ace.get("fetchedAt") else None,
+            announcements_available=bool(ace.get("announcementsAvailable", False)),
             errors=tuple(str(item) for item in payload.get("errors", [])),
-            portal_available=bool(portal.get("available")),
-            portal_fetched_at=(
-                str(portal["fetchedAt"]) if portal.get("fetchedAt") else None
-            ),
-            toyonet_ace_available=bool(toyonet_ace.get("available")),
-            toyonet_ace_fetched_at=(
-                str(toyonet_ace["fetchedAt"]) if toyonet_ace.get("fetchedAt") else None
-            ),
         )

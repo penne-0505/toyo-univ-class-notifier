@@ -1,167 +1,116 @@
-# Toyo Portal Automation
+# Toyo University Automation
 
-This repo now has a minimal recurring automation flow for the Toyo portal using Playwright, TypeScript, a dedicated Chrome profile for login, and a saved `storageState` for headless reruns.
+東洋大学の学内システム（学務ポータル / ToyoNet-ACE）から履修・課題・お知らせを取得し、LLMやDiscord botから利用できるようにするツール群です。
 
-## Commands
+## アーキテクチャ
 
-- `npm run toyo:login`
-  Opens the portal with the dedicated profile and waits for a successful session. Run this from your desktop session when manual login is needed.
-- `npm run toyo:refresh-session`
-  Alias for `toyo:login`. Use this name when the saved session has expired and you want to refresh it explicitly.
-- `npm run toyo:check`
-  Headless check to confirm whether the saved profile is still authenticated.
-- `npm run toyo:run`
-  Headless recurring runner. For now it validates the session, opens the portal, and saves a screenshot plus a JSON summary under `artifacts/toyo/`.
-- `npm run toyo:export-enrollment`
-  Fetches the current registration confirmation page, writes a Markdown summary, writes structured JSON, and builds a timetable-style `.xlsx`.
-- `npm run toyo:sync`
-  Refreshes the enrollment JSON/Markdown and writes a Discord-friendly summary JSON under `output/bot/summary.json`.
-- `npm run typecheck`
-  Runs TypeScript type checking across the Playwright config, tests, and Toyo scripts.
+```
+Scripts (scripts/)         ← データ取得 core (Playwright + TypeScript)
+   ↓ output/ にキャッシュ
+Skill (.claude/commands/)  ← LLM の対話インターフェース
+Discord Bot (bot/)         ← 機械的な定型閲覧の薄い wrapper (Python + uv)
+```
 
-## Runtime Files
+- **Scripts**: 履修・シラバス・課題・お知らせ・祝日を取得して `output/` に保存する core 層
+- **Skill** (`.claude/commands/toyo.md`): Claude Code から `/project:toyo` で呼び出すLLM用の判断フロー
+- **Bot** (`bot/`): Slash コマンドと cron 通知を提供する Discord bot
 
-- Dedicated browser profile: `playwright/.profiles/toyo`
-- Saved storage state: `playwright/.auth/toyo-state.json`
-- Session metadata: `playwright/.auth/toyo-session.json`
-- Artifacts: `artifacts/toyo/`
-- Enrollment outputs: `output/toyo/` and `output/spreadsheet/`
-- Discord summary output: `output/bot/summary.json`
-- Discord bot config: `state/discord-config.json`
-- Discord notification state: `state/discord-notification-state.json`
+## クイックスタート
 
-## Reference Docs
+```bash
+# 1. 初回ログイン（GUIで一度だけ）
+npm run toyo:login
 
-- `docs/basic-info.md`
-  Manual notes for recurring questions such as class times, campus access, entry rules, and the current enrollment snapshot.
+# 2. データを同期
+npm run toyo:sync
 
-## Spreadsheet Dependency
+# 3. Bot を起動（別端末で）
+cd bot && uv sync && uv run toyo-discord-bot
+```
 
-The enrollment export writes Excel files through the repo-local Python virtual environment.
+セッションが切れたら `npm run toyo:refresh-session`（`toyo:login` の別名）で再ログインします。
 
-Setup:
+## スクリプト一覧
+
+| コマンド | 内容 |
+|---------|------|
+| `npm run toyo:login` | 専用Chromeプロファイルでポータルにログインし、`storageState` を保存 |
+| `npm run toyo:refresh-session` | `toyo:login` の別名（期限切れ時の再ログイン用） |
+| `npm run toyo:check` | 保存済みセッションが有効か headless で確認 |
+| `npm run toyo:sync` | 履修・課題・コンテンツ・お知らせ・祝日をまとめて取得して `summary.json` を更新 |
+| `npm run toyo:export-enrollment` | 履修登録確認表のみ取得・整形 |
+| `npm run toyo:syllabus -- --course-code <code>` | 指定授業のシラバスを取得（学期内キャッシュあり） |
+| `npm run toyo:announcements` | ACEのコースニュース（休講・補講・教室変更含む）のみ取得 |
+| `npm run toyo:calendar` | 内閣府CSVから祝日データを取得 |
+| `npm run toyo:run` | セッション疎通確認用の最小ランナー |
+| `npm run typecheck` | TypeScript型チェック |
+
+## 出力ファイル
+
+| パス | 内容 |
+|------|------|
+| `output/toyo/registration-data.json` | 履修登録確認表（`fetchStatus: success/error/empty`） |
+| `output/toyo/registration-summary.md` | 履修まとめ（人間向け） |
+| `output/spreadsheet/toyo-timetable.xlsx` | 時間割スプレッドシート |
+| `output/toyo/syllabus/<授業コード>.json` | シラバス（学期内キャッシュ） |
+| `output/toyo/toyonet-ace-assignments.json` | 未提出課題一覧 |
+| `output/toyo/toyonet-ace-contents.json` | コース掲示資料 |
+| `output/toyo/announcements.json` | コースニュース（カテゴリ: 休講/補講/教室変更/その他） |
+| `output/toyo/academic-calendar.json` | 祝日データ |
+| `output/bot/summary.json` | 上記を集約したBot/Skill用JSON |
+
+エラー時のスナップショットは `artifacts/toyo/` に保存されます。
+
+## ランタイムファイル
+
+- 専用ブラウザプロファイル: `playwright/.profiles/toyo`
+- 保存セッション: `playwright/.auth/toyo-state.json`
+- セッションメタデータ: `playwright/.auth/toyo-session.json`
+- Bot状態: `state/discord-bot-state.json`
+
+## 環境変数
+
+`.env.local`（リポジトリルート）または `bot/.env`（Bot用）に保存できます。
+
+### スクリプト用 (.env.local)
+
+| 変数 | 内容 |
+|------|------|
+| `TOYO_USERNAME` / `TOYO_PASSWORD` | SSO自動再ログイン用 |
+| `TOYO_CHROME_PATH` | Chrome実行パス上書き（既定: `/opt/google/chrome/chrome`） |
+| `TOYO_HEADLESS=0\|1` | headed/headless強制 |
+| `TOYO_PORTAL_URL` | ポータルURL上書き |
+
+### Bot用 (bot/.env)
+
+| 変数 | 内容 |
+|------|------|
+| `DISCORD_TOKEN` | **必須** |
+| `DISCORD_GUILD_ID` | 任意。開発時のSlash Command即時反映用 |
+
+通知先チャンネル・通知時刻・リマインド分は環境変数ではなく **Slashコマンドで設定**します（`bot/README.md` 参照）。
+
+## ドキュメント
+
+- [`docs/basic-info.md`](docs/basic-info.md) — 授業時間、キャンパスアクセス、入構ルールなど固定情報
+- [`docs/toyo-automation-runbook.md`](docs/toyo-automation-runbook.md) — 運用手順、セッション喪失時の回復、情報ソースのルーティング表
+- [`.claude/commands/toyo.md`](.claude/commands/toyo.md) — LLM用Skill定義（決定フロー・回答テンプレート）
+- [`bot/README.md`](bot/README.md) — Discord botの設定・コマンド一覧
+
+## スプレッドシート出力（Python依存）
+
+履修エクスポートは Python virtual env 経由で `.xlsx` を生成します。
+
 ```bash
 uv venv .venv
 uv pip install --python .venv/bin/python openpyxl pandas
 ```
 
-## Environment Variables
+## 想定ワークフロー
 
-- `TOYO_CHROME_PATH`
-  Override the Chrome executable path. Default: `/opt/google/chrome/chrome`
-- `TOYO_HEADLESS=0|1`
-  Force headed or headless mode.
-- `TOYO_USERNAME`
-  Optional username for auto-filling the login page.
-- `TOYO_PASSWORD`
-  Optional password for auto-filling the login page.
-- `TOYO_PORTAL_URL`
-  Override the target portal URL if needed.
-- `DISCORD_TOKEN`
-  Discord bot token for the Python bot under `bot/`.
-- `DISCORD_GUILD_ID`
-  Optional guild ID for faster slash command sync during setup.
-- `TOYO_SYNC_COMMAND`
-  Optional command for the bot's periodic sync job. Default: `npm run toyo:sync`
+1. `npm run toyo:login` を一度実行してログインを完了する
+2. `npm run toyo:check` で保存セッションが有効か確認
+3. 必要なときに `npm run toyo:sync` を走らせて最新化
+4. Bot を起動しておけば cron で自動同期 + 通知
 
-You can also store these in a repo-local `.env.local` file. The scripts load `.env.local` first, then `.env`.
-
-## Intended Workflow
-
-1. Run `npm run toyo:login` once and complete the login flow in the browser window.
-2. Use `npm run toyo:check` to confirm the saved `storageState` still works in headless mode.
-3. Run `npm run toyo:export-enrollment` when you want the current registration summary and timetable export.
-4. Schedule `npm run toyo:run` for recurring execution if you want a simple session smoke test.
-
-When the SSO session expires, only step 1 needs manual intervention again. `npm run toyo:refresh-session` is the same flow with a more explicit name.
-
-## Enrollment Export
-
-The export reads the portal page:
-- `履修登録確認表照会`
-
-It writes:
-- `output/toyo/registration-summary.md`
-- `output/toyo/registration-data.json`
-- `output/spreadsheet/toyo-timetable.xlsx`
-
-The current timetable workbook is intentionally simple:
-- days across columns
-- periods down rows
-- each cell contains course name, code, instructor, room, campus, and credits
-
-Typical run:
-```bash
-npm run toyo:check
-npm run toyo:export-enrollment
-```
-
-If the export starts failing with a login page, refresh the session first:
-```bash
-npm run toyo:refresh-session
-```
-
-If the usual browser session has expired, open `https://g-sys.toyo.ac.jp/portal/` and re-login there first, then refresh the saved automation session with `npm run toyo:login`.
-
-## Discord Bot
-
-The `bot/` directory contains a `discord.py` bot managed by `uv`.
-
-Setup:
-```bash
-cd bot
-uv sync
-uv run toyo-discord-bot
-```
-
-The bot reads `output/bot/summary.json`, which is generated by:
-```bash
-npm run toyo:sync
-```
-
-Slash commands:
-- `/next`
-- `/today`
-- `/status`
-- `/refresh`
-- `/setchannel`
-- `/addtime`
-- `/removetime`
-- `/listtimes`
-
-Time handling:
-- Daily notification times are interpreted as `Asia/Tokyo` / JST.
-- The default daily summary time is `15:00`.
-- Class reminders are sent 3 hours before the next scheduled class.
-
-Persistent bot state:
-- `state/discord-config.json`
-  Stores `notifyChannelId` and the JST daily summary times.
-- `state/discord-notification-state.json`
-  Stores sent notification keys to avoid duplicate posts after restarts.
-
-## ToyoNet-ACE Assignment Collector
-
-The Discord summary pipeline already includes a collector slot for ToyoNet-ACE assignments, but the site-specific Playwright scraper is not implemented yet.
-
-Current behavior:
-- If `output/toyo/toyonet-ace-assignments.json` exists, `npm run toyo:sync` reads it and includes the assignments in `output/bot/summary.json`.
-- If it does not exist, the summary is still generated and records a collector warning in `errors`.
-
-Expected placeholder file shape:
-```json
-{
-  "fetchedAt": "2026-04-16T10:00:00+09:00",
-  "assignments": [
-    {
-      "assignmentId": "course-1-report-1",
-      "courseName": "自然災害と防災",
-      "title": "第1回レポート",
-      "dueAt": "2026-04-20T23:59:00+09:00",
-      "status": "pending",
-      "sourceUrl": "https://example.invalid/assignment/1",
-      "notes": ["提出方法を確認"]
-    }
-  ]
-}
-```
+ポータルが `システムエラー` / `タイムアウトしました。` / SSOログイン画面 / 多要素認証設定画面 のいずれかを返した場合はログイン喪失として扱います。共通ヘルパー `detectToyoSessionLoss` / `recoverToyoSessionIfNeeded` (`scripts/lib/toyo.ts`) が自動回復を試み、失敗した場合は手動再ログインを案内します。詳細は `docs/toyo-automation-runbook.md` を参照。

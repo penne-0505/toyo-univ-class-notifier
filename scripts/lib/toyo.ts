@@ -6,6 +6,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 const repoRoot = path.resolve(__dirname, '..', '..');
 const defaultChromePath = '/opt/google/chrome/chrome';
 const loginHost = 'slink.secioss.com';
+export const ssoRecoveryLoginUrl =
+  'https://slink.secioss.com/pub/login.cgi?back=%2fuser%2findex.php%3ftenant%3dtoyo.jp';
 
 function loadProjectEnv(): void {
   const envFiles = ['.env.local', '.env'];
@@ -82,6 +84,28 @@ export interface SnapshotArtifact {
 export interface StateContext {
   browser: Browser;
   context: BrowserContext;
+}
+
+export type ToyoSessionLossReason =
+  | 'sso-login'
+  | 'login-form'
+  | 'mfa-settings'
+  | 'system-error'
+  | 'timeout';
+
+export interface ToyoSessionRecoveryOptions {
+  returnUrl?: string;
+  saveState?: boolean;
+  snapshotTag?: string;
+  timeoutMs?: number;
+}
+
+export interface ToyoSessionRecoveryResult {
+  finalUrl: string;
+  loginUrl: string;
+  reason: ToyoSessionLossReason | null;
+  recovered: boolean;
+  returnUrl: string;
 }
 
 export const paths: Paths = {
@@ -210,6 +234,119 @@ export async function autoFillLogin(page: Page): Promise<boolean> {
   await page.locator('#password_input').fill(password);
   await page.locator('#login_button').click();
   return true;
+}
+
+export async function detectToyoSessionLoss(
+  page: Page
+): Promise<ToyoSessionLossReason | null> {
+  const url = page.url();
+  const title = await page.title().catch(() => '');
+  const hasLoginForm =
+    (await page.locator('#username_input, #password_input, #login_button').count()) > 0;
+  const bodyText = await page
+    .locator('body')
+    .innerText({ timeout: 5_000 })
+    .catch(() => '');
+
+  if (title.includes('システムエラー') || bodyText.includes('システムエラー')) {
+    return 'system-error';
+  }
+  if (bodyText.includes('タイムアウトしました')) {
+    return 'timeout';
+  }
+  if (bodyText.includes('多要素認証設定画面')) {
+    return 'mfa-settings';
+  }
+  if (hasLoginForm) {
+    return 'login-form';
+  }
+  if (isLoginUrl(url)) {
+    return 'sso-login';
+  }
+
+  return null;
+}
+
+export async function recoverToyoSessionIfNeeded(
+  page: Page,
+  options: ToyoSessionRecoveryOptions = {}
+): Promise<ToyoSessionRecoveryResult> {
+  const reason = await detectToyoSessionLoss(page);
+  const returnUrl = options.returnUrl ?? page.url();
+  const timeoutMs = options.timeoutMs ?? 60_000;
+
+  if (!reason) {
+    return {
+      finalUrl: page.url(),
+      loginUrl: ssoRecoveryLoginUrl,
+      reason,
+      recovered: false,
+      returnUrl,
+    };
+  }
+
+  if (options.snapshotTag) {
+    await collectPortalSnapshot(page, options.snapshotTag).catch(() => {});
+  }
+
+  await page.goto(ssoRecoveryLoginUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+  const autoSubmitted = await autoFillLogin(page);
+  if (!autoSubmitted) {
+    const recoveryPageReason = await detectToyoSessionLoss(page);
+    if (recoveryPageReason === 'login-form' || recoveryPageReason === 'sso-login') {
+      throw new Error(
+        `Toyo SSO recovery was required (${reason}), but credentials could not be autofilled. Run "npm run toyo:login" manually.`
+      );
+    }
+  } else {
+    await page
+      .waitForFunction(
+        () =>
+          window.location.hostname !== 'slink.secioss.com' ||
+          document.querySelector('#username_input, #password_input, #login_button') === null,
+        undefined,
+        { timeout: timeoutMs }
+      )
+      .catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+  }
+
+  if (returnUrl && !isPortalUrl(returnUrl)) {
+    await page.goto(portalUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+    const portalReason = await detectToyoSessionLoss(page);
+    if (portalReason && portalReason !== 'mfa-settings') {
+      throw new Error(
+        `Toyo SSO recovery reached the portal warm-up step, but the session still appears invalid (${portalReason}). Current URL: ${page.url()}`
+      );
+    }
+  }
+
+  if (returnUrl && page.url() !== returnUrl) {
+    await page.goto(returnUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+  }
+
+  const remainingReason = await detectToyoSessionLoss(page);
+  if (remainingReason) {
+    throw new Error(
+      `Toyo SSO recovery finished, but the session still appears invalid (${remainingReason}). Current URL: ${page.url()}`
+    );
+  }
+
+  if (options.saveState) {
+    await saveSessionState(page.context(), page);
+  }
+
+  return {
+    finalUrl: page.url(),
+    loginUrl: ssoRecoveryLoginUrl,
+    reason,
+    recovered: true,
+    returnUrl,
+  };
 }
 
 export async function waitForSession(page: Page, timeoutMs: number): Promise<void> {

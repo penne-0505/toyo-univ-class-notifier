@@ -1,7 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { getOrCreatePage, launchStateContext, shouldRunHeadless } from './toyo';
+import {
+  getOrCreatePage,
+  launchStateContext,
+  recoverToyoSessionIfNeeded,
+  shouldRunHeadless,
+} from './toyo';
 
 export type Course = {
   semesterLabel: string;
@@ -18,7 +23,10 @@ export type Course = {
   credits: number | null;
 };
 
+export type FetchStatus = 'success' | 'error' | 'empty';
+
 export type EnrollmentData = {
+  fetchStatus: FetchStatus;
   fetchedAt: string;
   sourceUrl: string;
   pageTitle: string;
@@ -28,6 +36,16 @@ export type EnrollmentData = {
   academicYear: string;
   courses: Course[];
 };
+
+function computeFetchStatus(pageTitle: string, courses: Course[]): FetchStatus {
+  if (pageTitle.includes('システムエラー') || pageTitle.includes('タイムアウト')) {
+    return 'error';
+  }
+  if (courses.length === 0) {
+    return 'empty';
+  }
+  return 'success';
+}
 
 export const repoRoot = path.resolve(__dirname, '..', '..');
 export const outputDir = path.join(repoRoot, 'output', 'toyo');
@@ -155,7 +173,13 @@ export async function scrapeEnrollmentData(): Promise<EnrollmentData> {
       timeout: 60_000,
     });
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+    await recoverToyoSessionIfNeeded(page, {
+      returnUrl: confirmationUrl,
+      saveState: true,
+      snapshotTag: 'registration-session-loss',
+    });
     const bodyText = await page.locator('body').innerText();
+    const pageTitle = await page.title();
     const normalizedText = bodyText.replace(/\u00A0/g, ' ');
     const lines = normalizedText
       .split('\n')
@@ -233,16 +257,18 @@ export async function scrapeEnrollmentData(): Promise<EnrollmentData> {
       });
     }
 
-    return {
+    const result: EnrollmentData = {
+      fetchStatus: computeFetchStatus(pageTitle, courses),
       fetchedAt: new Date().toISOString(),
       sourceUrl: page.url(),
-      pageTitle: await page.title(),
+      pageTitle,
       studentNumber: studentNumberMatch?.[1] ?? '',
       studentNameKana: kanaLine,
       studentName: nameLine,
       academicYear: academicYearMatch?.[1] ?? '',
       courses,
     };
+    return result;
   } finally {
     await context.close();
     await browser.close();

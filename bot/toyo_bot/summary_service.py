@@ -6,169 +6,184 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .models import Assignment, ClassSummary, Summary
+from .models import Announcement, ClassSummary, DetailedClassSummary, Summary
+
+_DISCORD_LIMIT = 1900
+
+
+def _remind_label(minutes: int) -> str:
+    if minutes >= 60 and minutes % 60 == 0:
+        return f"{minutes // 60}時間前"
+    if minutes >= 60:
+        return f"{minutes // 60}時間{minutes % 60}分前"
+    return f"{minutes}分前"
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= _DISCORD_LIMIT:
+        return text
+    return text[:_DISCORD_LIMIT] + "\n…（省略）"
 
 
 class SummaryService:
     def __init__(self, summary_path: Path, timezone: ZoneInfo) -> None:
         self._summary_path = summary_path
-        self._timezone = timezone
+        self._tz = timezone
 
-    async def loadSummary(self) -> Summary:
-        def _read() -> dict[str, object]:
-            with self._summary_path.open("r", encoding="utf-8") as handle:
-                return json.load(handle)
+    async def load(self) -> Summary:
+        def _read() -> dict:
+            with self._summary_path.open("r", encoding="utf-8") as f:
+                return json.load(f)
 
         payload = await asyncio.to_thread(_read)
         return Summary.from_dict(payload)
 
-    def formatNextClass(self, summary: Summary) -> str:
-        if summary.next_class is None:
-            return "次コマ情報はまだありません。まず `/refresh` で同期してください。"
+    # ── formatters ──────────────────────────────────────────────────────────
 
-        class_info = summary.next_class
+    def format_today(self, summary: Summary) -> str:
+        return _truncate(self._format_day("今日", summary.today_classes, summary))
+
+    def format_tomorrow(self, summary: Summary) -> str:
+        return _truncate(self._format_day("明日", summary.tomorrow_classes, summary))
+
+    def format_assignments(self, summary: Summary) -> str:
+        if not summary.upcoming_assignments:
+            suffix = "" if summary.ace_available else "\n⚠️ ToyoNet-ACE の取得に失敗したため未確認"
+            return f"📋 未提出課題はありません。{suffix}"
+
+        lines = ["📋 **未提出課題**"]
+        for a in summary.upcoming_assignments[:10]:
+            lines.append(self._fmt_assignment(a))
+        if len(summary.upcoming_assignments) > 10:
+            lines.append(f"…他 {len(summary.upcoming_assignments) - 10} 件")
+        return _truncate("\n".join(lines))
+
+    def format_announcements(self, summary: Summary) -> str:
+        important = [a for a in summary.announcements if a.category in ("休講", "補講", "教室変更")]
+        if not important:
+            suffix = "" if summary.announcements_available else "\n⚠️ お知らせの取得に失敗したため未確認"
+            return f"📢 休講・補講・教室変更のお知らせはありません。{suffix}"
+
+        lines = ["📢 **お知らせ**"]
+        for a in important:
+            date_hint = f" ({a.target_date})" if a.target_date else ""
+            course = f" [{a.course_name_hint}]" if a.course_name_hint else ""
+            lines.append(f"**[{a.category}]**{course}{date_hint} {a.title}")
+        return _truncate("\n".join(lines))
+
+    def format_status(self, summary: Summary, last_sync: str | None = None) -> str:
+        dt = summary.generated_at.astimezone(self._tz).strftime("%Y-%m-%d %H:%M JST")
+        portal_icon = {"success": "✅", "error": "❌", "empty": "⚠️"}.get(
+            summary.portal_fetch_status, "❓"
+        )
         lines = [
-            "次コマ",
-            self._format_class_line(class_info),
+            "**データ状態**",
+            f"同期: {dt}",
+            f"ポータル: {portal_icon} {summary.portal_fetch_status}"
+            + (f" ({summary.portal_fetched_at})" if summary.portal_fetched_at else ""),
+            f"ACE課題: {'✅' if summary.ace_available else '❌'}"
+            + (f" ({summary.ace_fetched_at})" if summary.ace_fetched_at else ""),
+            f"ACEお知らせ: {'✅' if summary.announcements_available else '❌'}",
         ]
-
-        if summary.next_class_notes and summary.next_class_notes.first_topic:
-            lines.append(f"初回内容: {summary.next_class_notes.first_topic}")
-
-        if summary.next_class_notes and summary.next_class_notes.syllabus_points:
-            lines.append("シラバス要点:")
-            lines.extend(
-                f"- {point}" for point in summary.next_class_notes.syllabus_points[:3]
-            )
-
-        upcoming = self._upcoming_assignment_lines(summary.upcoming_assignments, class_info.course_name)
-        if upcoming:
-            lines.append("関連する提出物:")
-            lines.extend(upcoming)
-
-        return "\n".join(lines)
-
-    def formatToday(self, summary: Summary) -> str:
-        if not summary.today_classes:
-            return "今日の授業はありません。"
-
-        lines = ["今日の授業"]
-        lines.extend(self._format_class_line(class_info) for class_info in summary.today_classes)
-
-        if summary.upcoming_assignments:
-            lines.append("近い提出物:")
-            lines.extend(self._format_assignment_line(item) for item in summary.upcoming_assignments[:5])
-
-        return "\n".join(lines)
-
-    def formatStatus(self, summary: Summary, sync_status: str | None) -> str:
-        lines = [
-            "状態",
-            f"- Summary 更新: {self._format_dt(summary.generated_at)}",
-            f"- 学務ポータル: {'OK' if summary.portal_available else '要確認'}",
-            f"- ToyoNet-ACE: {'OK' if summary.toyonet_ace_available else '未実装または未取得'}",
-            f"- JST 通知時刻: {summary.timezone}",
-        ]
-        if summary.portal_fetched_at:
-            lines.append(f"- 履修データ取得: {summary.portal_fetched_at}")
-        if summary.toyonet_ace_fetched_at:
-            lines.append(f"- ACE 取得: {summary.toyonet_ace_fetched_at}")
         if summary.errors:
-            lines.append("- 収集エラー:")
-            lines.extend(f"  - {item}" for item in summary.errors[:5])
-        if sync_status:
-            lines.append(f"- 直近同期: {sync_status}")
-        return "\n".join(lines)
+            lines.append("エラー:")
+            lines.extend(f"  {e}" for e in summary.errors[:3])
+        if last_sync:
+            lines.append(f"直近同期: {last_sync}")
+        return _truncate("\n".join(lines))
 
-    def buildDailySummaryMessage(self, summary: Summary) -> str:
-        lines = ["15:00 まとめ" if self._is_fifteen(summary.generated_at) else "定期まとめ"]
-        if summary.today_classes:
-            lines.append("今日の残り授業:")
-            lines.extend(self._format_class_line(item) for item in summary.today_classes)
-        else:
-            lines.append("今日の授業はありません。")
+    def format_daily_summary(self, summary: Summary) -> str:
+        lines = ["**定期まとめ**"]
+        lines.append(self._format_day("今日", summary.today_classes, summary))
 
-        if summary.upcoming_assignments:
-            lines.append("提出物:")
-            lines.extend(self._format_assignment_line(item) for item in summary.upcoming_assignments[:5])
-        else:
-            lines.append("提出物は見つかっていません。")
+        important = [a for a in summary.announcements if a.category in ("休講", "補講", "教室変更")]
+        if important:
+            lines.append("\n📢 お知らせ:")
+            for a in important[:3]:
+                lines.append(f"  [{a.category}] {a.title}")
 
-        if summary.errors:
-            lines.append("注意:")
-            lines.extend(f"- {item}" for item in summary.errors[:3])
+        return _truncate("\n".join(lines))
 
-        return "\n".join(lines)
-
-    def buildClassReminderMessage(self, summary: Summary) -> str | None:
+    def format_reminder(self, summary: Summary, remind_minutes: int = 180) -> str | None:
         if summary.next_class is None:
             return None
-
-        class_info = summary.next_class
+        c = summary.next_class
+        start = c.starts_at.astimezone(self._tz).strftime("%H:%M")
+        end = c.ends_at.astimezone(self._tz).strftime("%H:%M")
         lines = [
-            "3時間前リマインド",
-            self._format_class_line(class_info),
+            f"⏰ **{_remind_label(remind_minutes)} リマインド**",
+            f"{start}-{end} {c.day}{c.period}限 **{c.course_name}**",
+            f"教室: {c.room or '未設定'} ({c.campus})",
         ]
 
-        related_assignments = self._upcoming_assignment_lines(
-            summary.upcoming_assignments,
-            class_info.course_name,
-        )
-        if related_assignments:
-            lines.append("関連する提出物:")
-            lines.extend(related_assignments)
+        related = self._find_related_assignments(summary, c.course_code)
+        if related:
+            lines.append("関連課題:")
+            lines.extend(f"  {self._fmt_assignment(a)}" for a in related[:3])
+
+        related_ann = [
+            a for a in summary.announcements
+            if a.course_name_hint == c.course_name or c.course_name in a.title
+        ]
+        for a in related_ann[:2]:
+            lines.append(f"⚠️ [{a.category}] {a.title}")
+
+        return _truncate("\n".join(lines))
+
+    def reminder_key(self, class_info: ClassSummary) -> str:
+        return f"reminder:{class_info.course_code}:{class_info.starts_at.isoformat()}"
+
+    def daily_key(self, now: datetime, time_text: str) -> str:
+        return f"daily:{now.astimezone(self._tz).date().isoformat()}:{time_text}"
+
+    def should_send_daily(self, now: datetime, time_text: str) -> bool:
+        return now.astimezone(self._tz).strftime("%H:%M") == time_text
+
+    def should_send_reminder(self, summary: Summary, now: datetime, remind_minutes: int = 180) -> bool:
+        if summary.next_class is None:
+            return False
+        remind_at = summary.next_class.starts_at.timestamp() - 60 * remind_minutes
+        now_ts = now.timestamp()
+        return remind_at <= now_ts < remind_at + 60
+
+    # ── internals ───────────────────────────────────────────────────────────
+
+    def _format_day(
+        self, label: str, classes: tuple[DetailedClassSummary, ...], summary: Summary
+    ) -> str:
+        if not classes:
+            return f"**{label}の授業はありません。**"
+
+        lines = [f"**{label}の授業**"]
+        for item in classes:
+            c = item.class_info
+            start = c.starts_at.astimezone(self._tz).strftime("%H:%M")
+            end = c.ends_at.astimezone(self._tz).strftime("%H:%M")
+            lines.append(f"\n**{c.period}限** {start}-{end}")
+            lines.append(f"{c.course_name} / {c.room or '教室未設定'} / {c.instructor}")
+
+            for a in item.related_announcements:
+                lines.append(f"⚠️ [{a.category}] {a.title}")
+            for a in item.related_assignments[:2]:
+                lines.append(f"📋 {self._fmt_assignment(a)}")
+
+        if not summary.announcements_available:
+            lines.append("\n⚠️ お知らせの取得に失敗しました。直接 ToyoNet-ACE を確認してください。")
 
         return "\n".join(lines)
 
-    def reminderKey(self, class_info: ClassSummary) -> str:
-        return f"class-reminder:{class_info.course_code}:{class_info.starts_at.isoformat()}"
-
-    def dailySummaryKey(self, now: datetime, time_text: str) -> str:
-        now_jst = now.astimezone(self._timezone)
-        return f"daily-summary:{now_jst.date().isoformat()}:{time_text}"
-
-    def shouldSendClassReminder(self, summary: Summary, now: datetime) -> bool:
-        if summary.next_class is None:
-            return False
-        reminder_at = summary.next_class.starts_at.astimezone(self._timezone).timestamp() - 3 * 3600
-        now_ts = now.astimezone(self._timezone).timestamp()
-        return reminder_at <= now_ts < reminder_at + 300
-
-    def shouldSendDailySummary(self, now: datetime, time_text: str) -> bool:
-        current = now.astimezone(self._timezone).strftime("%H:%M")
-        return current == time_text
-
-    @staticmethod
-    def _is_fifteen(generated_at: datetime) -> bool:
-        return generated_at.astimezone(ZoneInfo("Asia/Tokyo")).strftime("%H:%M") == "15:00"
-
-    def _upcoming_assignment_lines(
-        self, assignments: tuple[Assignment, ...], course_name: str
-    ) -> list[str]:
-        lines: list[str] = []
-        for item in assignments:
-            if item.course_name != course_name:
-                continue
-            lines.append(self._format_assignment_line(item))
-            if len(lines) >= 3:
-                break
-        return lines
-
-    def _format_class_line(self, class_info: ClassSummary) -> str:
-        start = class_info.starts_at.astimezone(self._timezone).strftime("%m/%d %H:%M")
-        end = class_info.ends_at.astimezone(self._timezone).strftime("%H:%M")
-        room = class_info.room or "教室未設定"
-        return (
-            f"- {start}-{end} {class_info.day}{class_info.period}限 "
-            f"{class_info.course_name} / {room} / {class_info.instructor}"
-        )
-
-    def _format_assignment_line(self, assignment: Assignment) -> str:
-        if assignment.due_at:
-            due = assignment.due_at.astimezone(self._timezone).strftime("%m/%d %H:%M")
+    def _fmt_assignment(self, a: "Assignment") -> str:  # type: ignore[name-defined]
+        if a.due_at:
+            due = a.due_at.astimezone(self._tz).strftime("%m/%d %H:%M")
         else:
             due = "締切未確認"
-        return f"- {due} {assignment.course_name}: {assignment.title} [{assignment.status}]"
+        return f"{due} {a.course_name}: {a.title} [{a.status}]"
 
-    def _format_dt(self, value: datetime) -> str:
-        return value.astimezone(self._timezone).strftime("%Y-%m-%d %H:%M JST")
+    def _find_related_assignments(
+        self, summary: Summary, course_code: str
+    ) -> list:
+        for item in (*summary.today_classes, *summary.tomorrow_classes):
+            if item.class_info.course_code == course_code:
+                return list(item.related_assignments)
+        return []
+

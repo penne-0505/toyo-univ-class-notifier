@@ -1,35 +1,95 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from .config import Settings
-from .repositories import (
-    JsonConfigRepository,
-    JsonNotificationStateRepository,
-    NotifyChannelRepository,
-    NotifyScheduleRepository,
-    NotificationStateRepository,
-)
+from .models import ClassSummary, Summary
 from .summary_service import SummaryService
 from .sync_service import SyncResult, SyncService
 
 logger = logging.getLogger(__name__)
 
 
-def normalize_time_text(time_text: str) -> str:
-    pieces = time_text.strip().split(":")
-    if len(pieces) != 2:
-        raise ValueError("時刻は HH:MM 形式で指定してください。")
-    hour = int(pieces[0])
-    minute = int(pieces[1])
-    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-        raise ValueError("時刻は 00:00 から 23:59 の範囲で指定してください。")
+def _parse_time(value: str) -> str:
+    parts = value.strip().split(":")
+    if len(parts) != 2:
+        raise ValueError("HH:MM 形式で入力してください。")
+    hour, minute = int(parts[0]), int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("00:00 〜 23:59 の範囲で入力してください。")
     return f"{hour:02d}:{minute:02d}"
+
+
+class BotState:
+    """Persists notify channel, schedule, and notification dedup keys to a JSON file."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._lock = asyncio.Lock()
+        self._data: dict = {}
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            self._data = json.loads(self._path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            self._data = {}
+
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(
+            json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    async def get_notify_channel_id(self) -> int | None:
+        async with self._lock:
+            raw = self._data.get("notify_channel_id")
+            return int(raw) if raw else None
+
+    async def set_notify_channel_id(self, channel_id: int) -> None:
+        async with self._lock:
+            self._data["notify_channel_id"] = channel_id
+            self._save()
+
+    async def get_notify_times(self) -> tuple[str, ...]:
+        async with self._lock:
+            stored = self._data.get("notify_times")
+            return tuple(stored) if stored is not None else ()
+
+    async def set_notify_times(self, times: tuple[str, ...]) -> None:
+        async with self._lock:
+            self._data["notify_times"] = list(times)
+            self._save()
+
+    async def get_remind_before_minutes(self) -> int:
+        async with self._lock:
+            stored = self._data.get("remind_before_minutes")
+            return int(stored) if stored is not None else 180
+
+    async def set_remind_before_minutes(self, minutes: int) -> None:
+        async with self._lock:
+            self._data["remind_before_minutes"] = minutes
+            self._save()
+
+    async def was_sent(self, key: str) -> bool:
+        async with self._lock:
+            return key in self._data.get("sent_keys", {})
+
+    async def mark_sent(self, key: str) -> None:
+        async with self._lock:
+            sent = self._data.setdefault("sent_keys", {})
+            sent[key] = datetime.now(timezone.utc).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+            self._data["sent_keys"] = {k: v for k, v in sent.items() if v >= cutoff}
+            self._save()
 
 
 class ToyoBotCog(commands.Cog):
@@ -38,25 +98,18 @@ class ToyoBotCog(commands.Cog):
         bot: commands.Bot,
         *,
         settings: Settings,
-        channel_repository: NotifyChannelRepository,
-        schedule_repository: NotifyScheduleRepository,
-        notification_state_repository: NotificationStateRepository,
+        state: BotState,
         summary_service: SummaryService,
         sync_service: SyncService,
     ) -> None:
         self.bot = bot
         self.settings = settings
-        self.channel_repository = channel_repository
-        self.schedule_repository = schedule_repository
-        self.notification_state_repository = notification_state_repository
+        self.state = state
         self.summary_service = summary_service
         self.sync_service = sync_service
 
     async def cog_load(self) -> None:
-        self.sync_loop.change_interval(seconds=self.settings.summary_sync_interval_seconds)
-        self.notification_loop.change_interval(
-            seconds=self.settings.notification_check_interval_seconds
-        )
+        self.sync_loop.change_interval(seconds=self.settings.sync_interval_seconds)
         self.sync_loop.start()
         self.notification_loop.start()
 
@@ -64,11 +117,13 @@ class ToyoBotCog(commands.Cog):
         self.sync_loop.cancel()
         self.notification_loop.cancel()
 
+    # ── background loops ────────────────────────────────────────────────────
+
     @tasks.loop(seconds=1800)
     async def sync_loop(self) -> None:
         result = await self.sync_service.runSync()
         if not result.success:
-            await self._send_sync_failure_once(result)
+            await self._notify_sync_failure(result)
 
     @sync_loop.before_loop
     async def before_sync_loop(self) -> None:
@@ -76,10 +131,6 @@ class ToyoBotCog(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def notification_loop(self) -> None:
-        await self.notification_state_repository.pruneOlderThan(
-            datetime.now(self.settings.timezone) - timedelta(days=14)
-        )
-
         summary = await self._safe_load_summary()
         if summary is None:
             return
@@ -89,59 +140,74 @@ class ToyoBotCog(commands.Cog):
         if channel is None:
             return
 
-        for time_text in await self.schedule_repository.listNotifyTimes():
-            if not self.summary_service.shouldSendDailySummary(now, time_text):
-                continue
-            key = self.summary_service.dailySummaryKey(now, time_text)
-            if await self.notification_state_repository.wasSent(key):
-                continue
-            await channel.send(self.summary_service.buildDailySummaryMessage(summary))
-            await self.notification_state_repository.markSent(key, now)
+        notify_times = await self.state.get_notify_times()
+        remind_minutes = await self.state.get_remind_before_minutes()
 
-        if (
-            summary.next_class is not None
-            and self.summary_service.shouldSendClassReminder(summary, now)
-        ):
-            key = self.summary_service.reminderKey(summary.next_class)
-            if not await self.notification_state_repository.wasSent(key):
-                message = self.summary_service.buildClassReminderMessage(summary)
-                if message:
-                    await channel.send(message)
-                    await self.notification_state_repository.markSent(key, now)
+        # daily summary at configured times
+        for time_text in notify_times:
+            if self.summary_service.should_send_daily(now, time_text):
+                key = self.summary_service.daily_key(now, time_text)
+                if not await self.state.was_sent(key):
+                    await channel.send(self.summary_service.format_daily_summary(summary))
+                    await self.state.mark_sent(key)
+
+        # class reminder
+        if self.summary_service.should_send_reminder(summary, now, remind_minutes):
+            assert summary.next_class is not None
+            key = self.summary_service.reminder_key(summary.next_class)
+            if not await self.state.was_sent(key):
+                msg = self.summary_service.format_reminder(summary, remind_minutes)
+                if msg:
+                    await channel.send(msg)
+                    await self.state.mark_sent(key)
 
     @notification_loop.before_loop
     async def before_notification_loop(self) -> None:
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="next", description="次コマと関連する提出物を表示します。")
-    async def next_command(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
-        summary = await self._safe_load_summary()
-        if summary is None:
-            await interaction.followup.send("summary.json がありません。先に `/refresh` を実行してください。")
-            return
-        await interaction.followup.send(self.summary_service.formatNextClass(summary))
+    # ── slash commands ───────────────────────────────────────────────────────
 
-    @app_commands.command(name="today", description="今日の授業一覧と近い提出物を表示します。")
+    @app_commands.command(name="today", description="今日の授業・課題・お知らせを表示します。")
     async def today_command(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
-        summary = await self._safe_load_summary()
+        summary = await self._require_summary(interaction)
         if summary is None:
-            await interaction.followup.send("summary.json がありません。先に `/refresh` を実行してください。")
             return
-        await interaction.followup.send(self.summary_service.formatToday(summary))
+        await interaction.followup.send(self.summary_service.format_today(summary))
 
-    @app_commands.command(name="status", description="収集状態と直近同期状態を表示します。")
+    @app_commands.command(name="tomorrow", description="明日の授業・課題・お知らせを表示します。")
+    async def tomorrow_command(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
+        summary = await self._require_summary(interaction)
+        if summary is None:
+            return
+        await interaction.followup.send(self.summary_service.format_tomorrow(summary))
+
+    @app_commands.command(name="assignments", description="未提出課題一覧を表示します。")
+    async def assignments_command(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
+        summary = await self._require_summary(interaction)
+        if summary is None:
+            return
+        await interaction.followup.send(self.summary_service.format_assignments(summary))
+
+    @app_commands.command(name="announcements", description="休講・補講・教室変更のお知らせを表示します。")
+    async def announcements_command(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
+        summary = await self._require_summary(interaction)
+        if summary is None:
+            return
+        await interaction.followup.send(self.summary_service.format_announcements(summary))
+
+    @app_commands.command(name="status", description="データ取得状態と同期ログを表示します。")
     async def status_command(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        summary = await self._safe_load_summary()
+        summary = await self._require_summary(interaction)
         if summary is None:
-            await interaction.followup.send("summary.json がありません。先に `/refresh` を実行してください。")
             return
-        last_result = self.sync_service.getLastResult()
-        last_status = last_result.describe() if last_result else None
+        last = self.sync_service.getLastResult()
         await interaction.followup.send(
-            self.summary_service.formatStatus(summary, last_status),
+            self.summary_service.format_status(summary, last.describe() if last else None),
             ephemeral=True,
         )
 
@@ -155,12 +221,11 @@ class ToyoBotCog(commands.Cog):
                 ephemeral=True,
             )
             return
-
         summary = await self._safe_load_summary()
-        message = "同期が完了しました。"
+        msg = "同期が完了しました。"
         if summary is not None:
-            message = f"{message}\n\n{self.summary_service.formatNextClass(summary)}"
-        await interaction.followup.send(message, ephemeral=True)
+            msg += f"\n\n{self.summary_service.format_today(summary)}"
+        await interaction.followup.send(msg, ephemeral=True)
 
     @app_commands.command(
         name="setchannel",
@@ -171,96 +236,124 @@ class ToyoBotCog(commands.Cog):
         interaction: discord.Interaction,
         channel: discord.TextChannel | None = None,
     ) -> None:
-        target_channel = channel or interaction.channel
-        if not isinstance(target_channel, discord.TextChannel):
+        target = channel or interaction.channel
+        if not isinstance(target, discord.TextChannel):
             await interaction.response.send_message(
                 "テキストチャンネルで実行するか、`channel` を指定してください。",
                 ephemeral=True,
             )
             return
-
-        await self.channel_repository.setNotifyChannel(str(target_channel.id))
+        await self.state.set_notify_channel_id(target.id)
         await interaction.response.send_message(
-            f"通知先を {target_channel.mention} に設定しました。",
+            f"通知先を {target.mention} に設定しました。",
             ephemeral=True,
         )
 
-    @app_commands.command(name="addtime", description="JST の定期通知時刻を追加します。")
+    @app_commands.command(name="addtime", description="日次サマリーの通知時刻を追加します（JST HH:MM）。")
     async def addtime_command(self, interaction: discord.Interaction, time: str) -> None:
         try:
-            normalized = normalize_time_text(time)
-        except ValueError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            normalized = _parse_time(time)
+        except ValueError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
             return
-
-        times = await self.schedule_repository.addNotifyTime(normalized)
+        current = await self.state.get_notify_times()
+        if normalized in current:
+            await interaction.response.send_message(
+                f"`{normalized}` はすでに設定されています。", ephemeral=True
+            )
+            return
+        updated = (*current, normalized)
+        await self.state.set_notify_times(updated)
         await interaction.response.send_message(
-            f"定期通知時刻を追加しました。JST: {', '.join(times)}",
+            f"通知時刻を追加しました。現在: {', '.join(sorted(updated)) or 'なし'}",
             ephemeral=True,
         )
 
-    @app_commands.command(name="removetime", description="JST の定期通知時刻を削除します。")
+    @app_commands.command(name="removetime", description="日次サマリーの通知時刻を削除します（JST HH:MM）。")
     async def removetime_command(self, interaction: discord.Interaction, time: str) -> None:
         try:
-            normalized = normalize_time_text(time)
-        except ValueError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
+            normalized = _parse_time(time)
+        except ValueError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
             return
-
-        times = await self.schedule_repository.removeNotifyTime(normalized)
+        current = await self.state.get_notify_times()
+        updated = tuple(t for t in current if t != normalized)
+        await self.state.set_notify_times(updated)
         await interaction.response.send_message(
-            f"定期通知時刻を更新しました。JST: {', '.join(times) if times else 'なし'}",
+            f"通知時刻を更新しました。現在: {', '.join(sorted(updated)) or 'なし'}",
             ephemeral=True,
         )
 
-    @app_commands.command(name="listtimes", description="JST の定期通知時刻一覧を表示します。")
+    @app_commands.command(name="listtimes", description="通知設定の一覧を表示します。")
     async def listtimes_command(self, interaction: discord.Interaction) -> None:
-        times = await self.schedule_repository.listNotifyTimes()
+        times = await self.state.get_notify_times()
+        remind = await self.state.get_remind_before_minutes()
+        channel_id = await self.state.get_notify_channel_id()
+        channel_text = f"<#{channel_id}>" if channel_id else "未設定"
         await interaction.response.send_message(
-            f"定期通知時刻は JST で {', '.join(times) if times else '未設定'} です。",
+            f"**通知設定**\n"
+            f"チャンネル: {channel_text}\n"
+            f"日次サマリー時刻（JST）: {', '.join(sorted(times)) or 'なし'}\n"
+            f"授業リマインド: {remind}分前",
             ephemeral=True,
         )
 
-    async def _safe_load_summary(self):
+    @app_commands.command(name="setreminder", description="授業リマインドを何分前に送るか設定します。")
+    async def setreminder_command(self, interaction: discord.Interaction, minutes: int) -> None:
+        if minutes < 1 or minutes > 1440:
+            await interaction.response.send_message(
+                "1〜1440 の範囲で指定してください。", ephemeral=True
+            )
+            return
+        await self.state.set_remind_before_minutes(minutes)
+        await interaction.response.send_message(
+            f"授業リマインドを {minutes}分前 に設定しました。", ephemeral=True
+        )
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    async def _safe_load_summary(self) -> Summary | None:
         try:
-            return await self.summary_service.loadSummary()
+            return await self.summary_service.load()
         except FileNotFoundError:
             return None
         except Exception:
             logger.exception("Failed to load summary")
             return None
 
+    async def _require_summary(self, interaction: discord.Interaction) -> Summary | None:
+        summary = await self._safe_load_summary()
+        if summary is None:
+            await interaction.followup.send(
+                "summary.json がありません。先に `/refresh` を実行してください。"
+            )
+        return summary
+
     async def _get_notify_channel(self) -> discord.TextChannel | None:
-        channel_id = await self.channel_repository.getNotifyChannel()
+        channel_id = await self.state.get_notify_channel_id()
         if channel_id is None:
             return None
-        channel = self.bot.get_channel(int(channel_id))
+        channel = self.bot.get_channel(channel_id)
         if isinstance(channel, discord.TextChannel):
             return channel
         try:
-            fetched = await self.bot.fetch_channel(int(channel_id))
+            fetched = await self.bot.fetch_channel(channel_id)
         except discord.DiscordException:
             logger.exception("Failed to fetch notify channel %s", channel_id)
             return None
         return fetched if isinstance(fetched, discord.TextChannel) else None
 
-    async def _send_sync_failure_once(self, result: SyncResult) -> None:
+    async def _notify_sync_failure(self, result: SyncResult) -> None:
         channel = await self._get_notify_channel()
         if channel is None:
             return
-
         key = f"sync-error:{result.finished_at.date().isoformat()}:{result.error_message}"
-        if await self.notification_state_repository.wasSent(key):
+        if await self.state.was_sent(key):
             return
-
         await channel.send(
-            "同期に失敗しました。再ログインや収集先の確認が必要かもしれません。\n"
-            f"{result.error_message or 'Unknown error'}"
+            f"⚠️ 同期に失敗しました。\n{result.error_message or 'Unknown error'}"
         )
-        await self.notification_state_repository.markSent(
-            key,
-            datetime.now(self.settings.timezone),
-        )
+        await self.state.mark_sent(key)
 
 
 class ToyoDiscordBot(commands.Bot):
@@ -268,10 +361,7 @@ class ToyoDiscordBot(commands.Bot):
         intents = discord.Intents.none()
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings
-        self._config_repository = JsonConfigRepository(settings.config_path)
-        self._notification_state_repository = JsonNotificationStateRepository(
-            settings.notification_state_path
-        )
+        self._state = BotState(settings.state_path)
         self._summary_service = SummaryService(settings.summary_path, settings.timezone)
         self._sync_service = SyncService(settings.sync_command, settings.repo_root)
 
@@ -280,9 +370,7 @@ class ToyoDiscordBot(commands.Bot):
             ToyoBotCog(
                 self,
                 settings=self.settings,
-                channel_repository=self._config_repository,
-                schedule_repository=self._config_repository,
-                notification_state_repository=self._notification_state_repository,
+                state=self._state,
                 summary_service=self._summary_service,
                 sync_service=self._sync_service,
             )
