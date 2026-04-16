@@ -1,0 +1,15 @@
+[project]
+name = "toyo-discord-bot"
+version = "0.1.0"
+description = "Discord bot for Toyo portal summaries and assignment notifications."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "discord.py>=2.5.2,<3",
+]
+
+[project.scripts]
+toyo-discord-bot = "toyo_bot.__main__:main"
+
+[tool.uv]
+package = true

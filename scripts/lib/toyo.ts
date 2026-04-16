@@ -1,0 +1,295 @@
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+const defaultChromePath = '/opt/google/chrome/chrome';
+const loginHost = 'slink.secioss.com';
+
+function loadProjectEnv(): void {
+  const envFiles = ['.env.local', '.env'];
+
+  for (const fileName of envFiles) {
+    const filePath = path.join(repoRoot, fileName);
+    if (!fs.existsSync(filePath)) continue;
+
+    const content = fs.readFileSync(filePath, 'utf8');
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+
+      const separatorIndex = line.indexOf('=');
+      if (separatorIndex <= 0) continue;
+
+      const key = line.slice(0, separatorIndex).trim();
+      if (!key || process.env[key] !== undefined) continue;
+
+      let value = line.slice(separatorIndex + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+
+      process.env[key] = value;
+    }
+  }
+}
+
+loadProjectEnv();
+
+export const portalUrl = process.env.TOYO_PORTAL_URL || 'https://g-sys.toyo.ac.jp/portal';
+
+export interface Paths {
+  repoRoot: string;
+  artifactDir: string;
+  authDir: string;
+  profileDir: string;
+  storageStatePath: string;
+}
+
+export interface BrowserLaunchOptions {
+  headless: boolean;
+}
+
+export interface SessionMetadata {
+  savedAt: string;
+  title: string;
+  url: string;
+}
+
+export interface PortalLinkSummary {
+  text: string;
+  href: string | null;
+}
+
+export interface PortalSummary {
+  title: string;
+  url: string;
+  headings: string[];
+  links: PortalLinkSummary[];
+  textPreview: string;
+}
+
+export interface SnapshotArtifact {
+  screenshotPath: string;
+  summaryPath: string;
+  summary: PortalSummary;
+}
+
+export interface StateContext {
+  browser: Browser;
+  context: BrowserContext;
+}
+
+export const paths: Paths = {
+  repoRoot,
+  artifactDir: process.env.TOYO_ARTIFACT_DIR || path.join(repoRoot, 'artifacts', 'toyo'),
+  authDir: process.env.TOYO_AUTH_DIR || path.join(repoRoot, 'playwright', '.auth'),
+  profileDir:
+    process.env.TOYO_PROFILE_DIR || path.join(repoRoot, 'playwright', '.profiles', 'toyo'),
+  storageStatePath:
+    process.env.TOYO_STORAGE_STATE ||
+    path.join(repoRoot, 'playwright', '.auth', 'toyo-state.json'),
+};
+
+export function getChromePath(): string {
+  return process.env.TOYO_CHROME_PATH || process.env.CHROME_PATH || defaultChromePath;
+}
+
+export function shouldRunHeadless(defaultValue: boolean): boolean {
+  if (process.env.TOYO_HEADLESS === '1') return true;
+  if (process.env.TOYO_HEADLESS === '0') return false;
+  return defaultValue;
+}
+
+async function ensureRuntimeDirs(): Promise<void> {
+  await Promise.all([
+    fsp.mkdir(paths.artifactDir, { recursive: true }),
+    fsp.mkdir(paths.authDir, { recursive: true }),
+    fsp.mkdir(path.dirname(paths.storageStatePath), { recursive: true }),
+    fsp.mkdir(path.dirname(paths.profileDir), { recursive: true }),
+  ]);
+}
+
+export async function fileExists(targetPath: string): Promise<boolean> {
+  try {
+    await fsp.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isLoginUrl(urlString: string): boolean {
+  try {
+    return new URL(urlString).hostname === loginHost;
+  } catch {
+    return false;
+  }
+}
+
+export function isPortalUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    return url.hostname === 'g-sys.toyo.ac.jp' && url.pathname.startsWith('/portal');
+  } catch {
+    return false;
+  }
+}
+
+export async function getOrCreatePage(context: BrowserContext): Promise<Page> {
+  const existing = context.pages().find((page) => !page.isClosed());
+  return existing || context.newPage();
+}
+
+export async function launchPersistentBrowser({
+  headless,
+}: BrowserLaunchOptions): Promise<BrowserContext> {
+  await ensureRuntimeDirs();
+  return chromium.launchPersistentContext(paths.profileDir, {
+    executablePath: getChromePath(),
+    headless,
+    viewport: { width: 1440, height: 900 },
+    locale: 'ja-JP',
+    timezoneId: 'Asia/Tokyo',
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+}
+
+export async function launchBrowser({ headless }: BrowserLaunchOptions): Promise<Browser> {
+  await ensureRuntimeDirs();
+  return chromium.launch({
+    executablePath: getChromePath(),
+    headless,
+  });
+}
+
+export async function launchStateContext({
+  headless,
+}: BrowserLaunchOptions): Promise<StateContext> {
+  await ensureRuntimeDirs();
+  if (!(await fileExists(paths.storageStatePath))) {
+    throw new Error(
+      `Saved auth state was not found at ${paths.storageStatePath}. Run "npm run toyo:login" first.`
+    );
+  }
+
+  const browser = await launchBrowser({ headless });
+  const context = await browser.newContext({
+    storageState: paths.storageStatePath,
+    viewport: { width: 1440, height: 900 },
+    locale: 'ja-JP',
+    timezoneId: 'Asia/Tokyo',
+  });
+
+  return { browser, context };
+}
+
+export async function gotoPortal(page: Page): Promise<void> {
+  await page.goto(portalUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+}
+
+export async function autoFillLogin(page: Page): Promise<boolean> {
+  const username = process.env.TOYO_USERNAME;
+  const password = process.env.TOYO_PASSWORD;
+  if (!username || !password) {
+    return false;
+  }
+
+  const hasUsername = (await page.locator('#username_input').count()) > 0;
+  const hasPassword = (await page.locator('#password_input').count()) > 0;
+  if (!hasUsername || !hasPassword) {
+    return false;
+  }
+
+  await page.locator('#username_input').fill(username);
+  await page.locator('#password_input').fill(password);
+  await page.locator('#login_button').click();
+  return true;
+}
+
+export async function waitForSession(page: Page, timeoutMs: number): Promise<void> {
+  await page.waitForFunction(
+    ({ portal, login }: { portal: string; login: string }) => {
+      const current = window.location.href;
+      try {
+        const url = new URL(current);
+        return (
+          (url.hostname === 'g-sys.toyo.ac.jp' && url.pathname.startsWith('/portal')) ||
+          (!current.includes(login) && current.startsWith(portal))
+        );
+      } catch {
+        return false;
+      }
+    },
+    { portal: portalUrl, login: loginHost },
+    { timeout: timeoutMs }
+  );
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+}
+
+export async function saveSessionState(context: BrowserContext, page: Page): Promise<void> {
+  await ensureRuntimeDirs();
+  await context.storageState({ path: paths.storageStatePath });
+  const metadata: SessionMetadata = {
+    savedAt: new Date().toISOString(),
+    title: await page.title(),
+    url: page.url(),
+  };
+  await fsp.writeFile(
+    path.join(paths.authDir, 'toyo-session.json'),
+    JSON.stringify(metadata, null, 2),
+    'utf8'
+  );
+}
+
+export async function collectPortalSnapshot(
+  page: Page,
+  tag: string
+): Promise<SnapshotArtifact> {
+  await ensureRuntimeDirs();
+  const safeTag = tag.replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+  const screenshotPath = path.join(paths.artifactDir, `${safeTag}.png`);
+  const summaryPath = path.join(paths.artifactDir, `${safeTag}.json`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+
+  const summary = await page.evaluate((): PortalSummary => {
+    const text = document.body.innerText.replace(/\s+/g, ' ').trim();
+    const headings = [...document.querySelectorAll('h1, h2, h3')]
+      .map((el) => el.textContent?.trim() || '')
+      .filter(Boolean)
+      .slice(0, 20);
+    const links = [...document.querySelectorAll('a')]
+      .map((el) => ({
+        text: (el.textContent || '').replace(/\s+/g, ' ').trim(),
+        href: el.href || null,
+      }))
+      .filter((item) => item.text || item.href)
+      .slice(0, 30);
+
+    return {
+      title: document.title,
+      url: window.location.href,
+      headings,
+      links,
+      textPreview: text.slice(0, 3000),
+    };
+  });
+
+  await fsp.writeFile(summaryPath, JSON.stringify(summary, null, 2), 'utf8');
+  return { screenshotPath, summaryPath, summary };
+}
+
+export async function readSessionMetadata(): Promise<SessionMetadata | null> {
+  const metadataPath = path.join(paths.authDir, 'toyo-session.json');
+  if (!(await fileExists(metadataPath))) {
+    return null;
+  }
+
+  const raw = await fsp.readFile(metadataPath, 'utf8');
+  return JSON.parse(raw) as SessionMetadata;
+}

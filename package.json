@@ -1,0 +1,25 @@
+{
+  "name": "toyo-univ-analyze",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "toyo:login": "tsx ./scripts/toyo-login.ts",
+    "toyo:refresh-session": "tsx ./scripts/toyo-login.ts",
+    "toyo:check": "tsx ./scripts/toyo-check.ts",
+    "toyo:run": "tsx ./scripts/toyo-run.ts",
+    "toyo:export-enrollment": "tsx ./scripts/toyo-export-enrollment.ts",
+    "toyo:sync": "tsx ./scripts/toyo-sync.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
