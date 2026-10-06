@@ -5,9 +5,10 @@
 | ユニット | 間隔 | 内容 |
 | --- | --- | --- |
 | `toyo-watch` | 5 分ごと（`*:0/5`） | ACE の未提出課題とお知らせだけ取得し、変化があれば summary / agent-context を再生成して publish |
-| `toyo-daily` | 毎日 04:30 JST（`Persistent=true`） | 全取得（sync → credits → lottery → context）→ `toyo:publish --include-candidates --force` |
+| `toyo-daily` | 毎日 04:30 JST（`Persistent=true`） | 全取得（coursework → sync → credits → lottery → context）→ `toyo:publish --include-candidates --force` |
+| `toyo-coursework` | 毎時 :20 | ACE のコース別提出状況（レポート / 小テスト / アンケート / 成績 / 提出記録）を取得 → summary 再生成 → `toyo:context -- --no-sync` → `toyo:publish`。`flock -w 600` でロック待ち、`TimeoutStartSec=900` |
 
-- watch と daily は `flock /tmp/toyo-fetch.lock` で排他します。watch はロック中なら何もせず正常終了（終了コード 75 を成功扱い）、daily は最大 15 分ロックを待ちます。
+- watch・daily・coursework は `flock /tmp/toyo-fetch.lock` で排他します（Playwright セッションは同時に 1 つ）。watch はロック中なら何もせず正常終了（終了コード 75 を成功扱い）、daily は最大 15 分、coursework は最大 10 分ロックを待ちます。
 - watch は連続失敗 2 回で 15 分、4 回で 30 分スキップします（`state/watch-state.json`）。成功すると解除されます。systemd 側は 5 分固定のままです。
 - `PATH` は `/home/penne/.volta/bin:/usr/bin:/bin` に固定しています。node の場所が変わったらユニットの `Environment=PATH=` を直してください（`which node` で確認）。
 
@@ -27,6 +28,7 @@ bash deploy/install-timers.sh
 systemctl --user list-timers 'toyo-*'
 journalctl --user -u toyo-watch -n 20 --no-pager
 journalctl --user -u toyo-daily -n 50 --no-pager
+journalctl --user -u toyo-coursework -n 30 --no-pager
 cat state/watch-state.json          # 連続失敗回数・次回許可時刻
 git -C ~/toyo-data log --oneline -5
 ```
@@ -36,7 +38,7 @@ git -C ~/toyo-data log --oneline -5
 ## 停止・削除
 
 ```bash
-systemctl --user disable --now toyo-watch.timer toyo-daily.timer   # 停止のみ
+systemctl --user disable --now toyo-watch.timer toyo-daily.timer toyo-coursework.timer   # 停止のみ
 bash deploy/install-timers.sh --uninstall                           # ユニットも削除
 ```
 

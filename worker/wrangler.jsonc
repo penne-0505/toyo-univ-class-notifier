@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "toyo-data-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-06",
+  "kv_namespaces": [
+    { "binding": "DATA", "id": "1385c4c9bf6c449f833df62549569a90" }
+  ],
+  "secrets": { "required": ["READ_KEY", "WRITE_KEY"] },
+  "observability": { "enabled": true }
+}

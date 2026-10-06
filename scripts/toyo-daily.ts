@@ -20,6 +20,8 @@ type Stage = {
 };
 
 const stages: Stage[] = [
+  // sync が summary を組み立てる前に coursework を更新しておく（summary に取り込まれる）
+  { name: 'toyo:coursework', script: 'toyo-fetch-coursework.ts', args: ['--no-summary'], okCodes: [0] },
   { name: 'toyo:sync', script: 'toyo-sync.ts', args: [], okCodes: [0] },
   { name: 'toyo:credits', script: 'toyo-fetch-credits.ts', args: [], okCodes: [0] },
   { name: 'toyo:lottery', script: 'toyo-fetch-lottery.ts', args: [], okCodes: [0, 1] },

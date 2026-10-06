@@ -1,0 +1,16 @@
+{
+  "name": "toyo-data-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "toyo-univ-analyze の取得データをクラウドのエージェントへ REST で配る Cloudflare Worker",
+  "scripts": {
+    "types": "wrangler types",
+    "typecheck": "wrangler types && tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "wrangler": "^4.148.0"
+  }
+}

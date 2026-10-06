@@ -9,11 +9,15 @@ Scripts (scripts/)         ← データ取得 core (Playwright + TypeScript)
    ↓ output/ にキャッシュ
 Skill (.claude/commands/)  ← LLM の対話インターフェース
 Discord Bot (bot/)         ← 機械的な定型閲覧の薄い wrapper (Python + uv)
+toyo:publish               ← ~/toyo-data (GitHub, 正本) と Worker へ配信
+   ↓ PUT
+Worker (worker/)           ← クラウドのエージェント向け REST (Cloudflare Workers + KV, Bearer キー必須)
 ```
 
 - **Scripts**: 履修・シラバス・課題・お知らせ・祝日を取得して `output/` に保存する core 層
 - **Skill** (`.claude/commands/toyo.md`): Claude Code から `/project:toyo` で呼び出すLLM用の判断フロー
 - **Bot** (`bot/`): Slash コマンドと cron 通知を提供する Discord bot
+- **Worker** (`worker/`): 取得データを KV に持ち、クラウドのエージェントへ REST で返す（詳細は `worker/README.md`）
 
 ## クイックスタート
 
@@ -40,7 +44,9 @@ cd bot && uv sync && uv run toyo-discord-bot
 | `npm run toyo:sync` | 履修・課題・コンテンツ・お知らせ・祝日をまとめて取得して `summary.json` を更新 |
 | `npm run toyo:export-enrollment` | 履修登録確認表のみ取得・整形 |
 | `npm run toyo:syllabus -- --course-code <code>` | 指定授業のシラバスを取得（学期内キャッシュあり） |
+| `npm run toyo:syllabus:seed [-- --force]` | `registration-candidates.json` の候補シラバス本文から、登録中科目の `output/toyo/syllabus/<授業コード>.json/.md` を書き出す（ブラウザ不要。既存は `--force` で上書き） |
 | `npm run toyo:announcements` | ACEのコースニュース（休講・補講・教室変更含む）のみ取得 |
+| `npm run toyo:coursework [-- --no-summary]` | ACE の全 2026 年度コースの提出状況を取得（`_report` / `_query` / `_survey` / `_grade` と提出記録 30 日）→ `output/toyo/toyonet-ace-coursework.json`。授業コードで `registration-data.json` と突き合わせる。取得後に summary.json を再生成（`--no-summary` で省略）。`toyo-coursework` タイマー（毎時 :20）用 |
 | `npm run toyo:calendar` | 内閣府CSVから祝日データを取得 |
 | `npm run toyo:run` | セッション疎通確認用の最小ランナー |
 | `npm run toyo:context` | エージェントが最初に読む圧縮コンテキストを生成 |
@@ -50,15 +56,17 @@ cd bot && uv sync && uv run toyo-discord-bot
 | `npm run toyo:schedule [-- --date YYYY-MM-DD]` | `data/academic-schedule.json`（しおりから手で起こした学年暦）を読み、指定日（既定: 今日 JST）に進行中・直近の期間と、各曜日の第N回授業日を表示（ポータル不要） |
 | `npm run toyo:grading-rules` | シラバスの「成績評価の方法・基準」から配分・足切りを抽出して `grading-rules.json` に下書きを書く（`reviewed: true` の科目は上書きしない。ポータル不要） |
 | `npm run toyo:register -- --file plan.json [--exec]` | 履修登録画面に科目を入れて送信。既定は dry-run、`--exec` で実際に登録 |
-| `npm run toyo:publish [-- --dry-run --include-candidates --force]` | allowlist（`output/toyo/**`・`output/bot/summary.json`・`data/**`）を `~/toyo-data` へ同期し、時刻以外に差分があるときだけ commit & push。`meta.json` に鮮度・`sourceStatus` を書く |
+| `npm run toyo:publish [-- --dry-run --include-candidates --force --push-all-api]` | allowlist（`output/toyo/**`・`output/bot/summary.json`・`data/**`）を `~/toyo-data` へ同期し、時刻以外に差分があるときだけ commit & push。`meta.json` に鮮度・`sourceStatus` を書く。`TOYO_API_URL` / `TOYO_API_WRITE_KEY` があれば変化分を Worker にも PUT（`--push-all-api` で全件） |
 | `npm run toyo:watch` | ACE の未提出課題とお知らせだけ取得し、変化があれば summary / agent-context を再生成して publish（5 分タイマー用。失敗が続くと 15→30 分に自動バックオフ） |
-| `npm run toyo:daily` | 全取得（sync → credits → lottery → context）→ `toyo:publish --include-candidates --force`（24 時間タイマー用） |
+| `npm run toyo:daily` | 全取得（coursework → sync → credits → lottery → context）→ `toyo:publish --include-candidates --force`（24 時間タイマー用） |
 | `npm run typecheck` | TypeScript型チェック |
 
 ## 出力ファイル
 
 | パス | 内容 |
 |------|------|
+| `worker/`（デプロイ先 `https://toyo-data-api.penne0505pp.workers.dev`） | 上記データを REST で読む Worker。`/v1/context` など。Bearer キー必須 |
+| `output/toyo/toyonet-ace-coursework.json` | ACE のコース別提出状況。`courses[].items`（type: report/query/survey、status: open/waiting/closed/unknown、submitted: true/false/null、opensAt/dueAt）、`counts`（report+query のみ。アンケートは除く）、`grades`、トップレベルの `submissions`（提出記録 30 日）。drill（Web最終テスト）は query 扱い |
 | `output/toyo/registration-data.json` | 履修登録確認表（`fetchStatus: success/error/empty`） |
 | `output/toyo/registration-summary.md` | 履修まとめ（人間向け） |
 | `output/spreadsheet/toyo-timetable.xlsx` | 時間割スプレッドシート |
@@ -115,6 +123,7 @@ npm run toyo:lottery                     # 抽選実施科目の当落を確認
 | `TOYO_CHROME_PATH` | Chrome実行パス上書き（既定: `/opt/google/chrome/chrome`） |
 | `TOYO_HEADLESS=0\|1` | headed/headless強制 |
 | `TOYO_PORTAL_URL` | ポータルURL上書き |
+| `TOYO_API_URL` / `TOYO_API_WRITE_KEY` | Worker（`worker/`）への配信先と書き込みキー。両方あるときだけ publish が PUT する |
 
 ### Bot用 (bot/.env)
 

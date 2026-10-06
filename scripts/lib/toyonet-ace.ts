@@ -106,7 +106,7 @@ function normalizeText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-function toJstIso(raw: string): string | null {
+export function toJstIso(raw: string): string | null {
   const normalized = normalizeText(raw);
   if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(normalized)) {
     return null;
@@ -119,7 +119,7 @@ function toJstIso(raw: string): string | null {
   return `${normalizedWithSeconds.replace(' ', 'T')}+09:00`;
 }
 
-function normalizeCourseKey(value: string): string {
+export function normalizeCourseKey(value: string): string {
   return normalizeText(value).normalize('NFKC').replace(/[　\s]+/g, '').toUpperCase();
 }
 

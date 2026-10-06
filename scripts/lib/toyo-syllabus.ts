@@ -186,6 +186,20 @@ async function openTimetablePage(page: Page): Promise<void> {
     saveState: true,
     snapshotTag: 'syllabus-timetable-session-loss',
   });
+  // 時間割表は春・秋の全科目を 1 ページに持ち、学期タブは表示の切替に過ぎない（実機確認済み）。
+  // 行の描画待ちが足りないと 0 件になるため、行が現れるまで待つ。
+  await page.waitForSelector('td.subject_name a', { timeout: 20_000 }).catch(() => {});
+}
+
+/** 科目の学期（秋学期など）に合わせて時間割表の学期タブを切り替える。タブが無ければ何もしない。 */
+async function selectTimetableSemester(page: Page, semesterLabel: string): Promise<void> {
+  const semesterId = semesterLabel.startsWith('春') ? '1' : semesterLabel.startsWith('秋') ? '2' : null;
+  if (!semesterId) return;
+  await page
+    .locator(`div.stab_${semesterId}`)
+    .first()
+    .click({ timeout: 3_000 })
+    .catch(() => {});
 }
 
 async function readTimetableCandidates(page: Page): Promise<TimetableCandidate[]> {
@@ -358,7 +372,14 @@ export async function fetchSyllabus(course: SyllabusLookupInput): Promise<Syllab
 
   try {
     await openTimetablePage(page);
-    const candidates = await readTimetableCandidates(page);
+    await selectTimetableSemester(page, course.semesterLabel);
+    let candidates = await readTimetableCandidates(page);
+    if (candidates.length === 0) {
+      // 一時的な空表示への対策として、再読み込みして 1 回だけ再試行する。
+      await openTimetablePage(page);
+      await selectTimetableSemester(page, course.semesterLabel);
+      candidates = await readTimetableCandidates(page);
+    }
     if (candidates.length === 0) {
       throw new Error('No syllabus candidates were found on the timetable page.');
     }

@@ -156,7 +156,7 @@ function safeFileStem(value: string): string {
     .slice(0, 80);
 }
 
-function buildSyllabusMarkdown(course: Course, record: SyllabusRecord): string {
+export function buildSyllabusMarkdown(course: Course, record: SyllabusRecord): string {
   const lines = [
     `# ${record.courseName || course.courseName}`,
     '',
@@ -191,7 +191,7 @@ function buildSyllabusMarkdown(course: Course, record: SyllabusRecord): string {
   return `${lines.join('\n')}\n`;
 }
 
-async function writeSyllabusArtifacts(
+export async function writeSyllabusArtifacts(
   course: Course,
   record: SyllabusRecord
 ): Promise<{ jsonPath: string; markdownPath: string }> {

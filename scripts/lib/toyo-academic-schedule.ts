@@ -240,3 +240,36 @@ export function describePeriodTime(period: AcademicPeriod): string {
   if (!period.end) return `${fmt(period.start)}〜`;
   return `${fmt(period.start)} 〜 ${fmt(period.end)}`;
 }
+
+/**
+ * その日に授業が行われる学期ラベル（春学期 / 秋学期 等）。
+ * termFor で判定できない日（学期間の休み・期間外）は、classesStart が date 以前で最も新しい term で代用する。
+ * どの term もまだ始まっていない / スケジュールが無い場合は null（呼び出し側は絞り込みをしない）。
+ */
+export function semesterLabelFor(
+  isoDate: string,
+  schedule: AcademicSchedule | null = loadAcademicSchedule()
+): string | null {
+  if (!schedule) return null;
+  const exact = termFor(isoDate, schedule);
+  if (exact) return exact.semester;
+  const target = dayNumber(isoDate);
+  if (!Number.isFinite(target)) return null;
+  const latest = schedule.terms
+    .filter((term) => Number.isFinite(dayNumber(term.classesStart)) && dayNumber(term.classesStart) <= target)
+    .sort((a, b) => dayNumber(b.classesStart) - dayNumber(a.classesStart))[0];
+  return latest?.semester ?? null;
+}
+
+/** 科目の semesterLabel が、その日の学期に属するか（通年は常に true、学期が判定不能なら true）。 */
+export function courseInSemesterOn(
+  courseSemesterLabel: string,
+  isoDate: string,
+  schedule: AcademicSchedule | null = loadAcademicSchedule()
+): boolean {
+  const label = semesterLabelFor(isoDate, schedule);
+  if (!label) return true;
+  const course = courseSemesterLabel.trim();
+  if (course.startsWith('通年')) return true;
+  return course.startsWith(label.slice(0, 1));
+}

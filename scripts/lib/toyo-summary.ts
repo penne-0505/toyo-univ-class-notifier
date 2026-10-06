@@ -14,8 +14,18 @@ import {
   type CourseContent,
   type CourseContentCollectionResult,
 } from './toyonet-ace';
+import {
+  buildCourseworkBrief,
+  buildCourseworkSchedule,
+  findCourseworkByCode,
+  findCourseworkForAssignment,
+  loadCoursework,
+  type CourseworkBrief,
+  type CourseworkResult,
+  type CourseworkScheduleEntry,
+} from './toyonet-ace-coursework';
 import { fetchSyllabusWithCache, type SyllabusRecord } from './toyo-syllabus';
-import { sessionNumberFor } from './toyo-academic-schedule';
+import { courseInSemesterOn, sessionNumberFor } from './toyo-academic-schedule';
 import {
   collectToyoNetAceAnnouncements,
   type Announcement,
@@ -86,10 +96,14 @@ export type DetailedClassSummary = {
   sessionNumber: number | null;
   syllabus: DetailedClassNotes | null;
   relatedAssignments: Assignment[];
+  /** ACE のコース別提出状況（toyo:coursework 実行済みで、その科目が ACE に見つかる場合のみ）。 */
+  coursework: CourseworkBrief | null;
   relatedContents: CourseContent[];
   relatedAnnouncements: Announcement[];
   errors: string[];
 };
+
+export type AssignmentWithCoursework = Assignment & { coursework: CourseworkBrief | null };
 
 export type DiscordSummary = {
   generatedAt: string;
@@ -98,7 +112,9 @@ export type DiscordSummary = {
   nextClassNotes: NextClassNotes | null;
   todayClasses: DetailedClassSummary[];
   tomorrowClasses: DetailedClassSummary[];
-  upcomingAssignments: Assignment[];
+  upcomingAssignments: AssignmentWithCoursework[];
+  /** 今後 14 日に締切が来る coursework 項目（受付開始待ちを含む）を dueAt 順に。未取得なら空。 */
+  courseworkSchedule: CourseworkScheduleEntry[];
   courseContents: CourseContent[];
   announcements: Announcement[];
   sourceStatus: {
@@ -115,6 +131,8 @@ export type DiscordSummary = {
       contentsFetchedAt: string | null;
       announcementsAvailable: boolean;
       announcementsFetchedAt: string | null;
+      courseworkAvailable: boolean;
+      courseworkFetchedAt: string | null;
     };
   };
   errors: string[];
@@ -242,12 +260,18 @@ function occurrenceOnOffsetDay(
   };
 }
 
+/** 授業日が属する学期の科目（または通年）だけを通す。春学期科目が秋に出るのを防ぐ。 */
+function inSemester(course: Course, occurrence: DiscordCourseSummary | null): DiscordCourseSummary | null {
+  if (!occurrence) return null;
+  return courseInSemesterOn(course.semesterLabel, occurrence.startsAt.slice(0, 10)) ? occurrence : null;
+}
+
 function todayOccurrence(course: Course, now: Date): DiscordCourseSummary | null {
-  return occurrenceOnOffsetDay(course, now, 0);
+  return inSemester(course, occurrenceOnOffsetDay(course, now, 0));
 }
 
 function tomorrowOccurrence(course: Course, now: Date): DiscordCourseSummary | null {
-  return occurrenceOnOffsetDay(course, now, 1);
+  return inSemester(course, occurrenceOnOffsetDay(course, now, 1));
 }
 
 async function buildNextClassNotes(
@@ -355,6 +379,7 @@ async function buildDetailedClassesForOffset(
   assignments: Assignment[],
   contents: CourseContent[],
   announcements: Announcement[],
+  coursework: CourseworkResult | null,
   now: Date,
   dayOffset: number
 ): Promise<{ classes: DetailedClassSummary[]; errors: string[] }> {
@@ -393,8 +418,10 @@ async function buildDetailedClassesForOffset(
         );
       }
 
+      const courseworkCourse = findCourseworkByCode(coursework, course.courseCode);
       return {
         classInfo,
+        coursework: courseworkCourse ? buildCourseworkBrief(courseworkCourse, now) : null,
         sessionNumber: sessionNumberFor(classInfo.startsAt.slice(0, 10), classInfo.day),
         syllabus,
         relatedAssignments: relatedAssignments(assignments, classInfo.courseName),
@@ -426,7 +453,7 @@ export async function buildDiscordSummary(
   const courseNames = enrollment.courses.map((course) => course.courseName);
 
   const nextClass = enrollment.courses
-    .map((course) => nextOccurrence(course, now))
+    .map((course) => inSemester(course, nextOccurrence(course, now)))
     .filter((course): course is DiscordCourseSummary => course !== null)
     .sort((a, b) => a.startsAtEpochMs - b.startsAtEpochMs)[0] ?? null;
 
@@ -438,6 +465,7 @@ export async function buildDiscordSummary(
         collectToyoNetAceAnnouncements(courseNames),
       ]);
 
+  const coursework = await loadCoursework();
   const nextClassNotes = await buildNextClassNotes(nextClass, enrollment);
   const sortedAssignments = sortAssignments(assignmentResult.assignments);
   const sortedContents = sortCourseContents(contentResult.contents);
@@ -448,6 +476,7 @@ export async function buildDiscordSummary(
     sortedAssignments,
     sortedContents,
     sortedAnnouncements,
+    coursework,
     now,
     0
   );
@@ -456,6 +485,7 @@ export async function buildDiscordSummary(
     sortedAssignments,
     sortedContents,
     sortedAnnouncements,
+    coursework,
     now,
     1
   );
@@ -467,7 +497,11 @@ export async function buildDiscordSummary(
     nextClassNotes,
     todayClasses: todayResult.classes,
     tomorrowClasses: tomorrowResult.classes,
-    upcomingAssignments: sortedAssignments,
+    upcomingAssignments: sortedAssignments.map((assignment) => {
+      const course = findCourseworkForAssignment(coursework, assignment.assignmentId, assignment.courseName);
+      return { ...assignment, coursework: course ? buildCourseworkBrief(course, now) : null };
+    }),
+    courseworkSchedule: buildCourseworkSchedule(coursework, now, 14),
     courseContents: sortedContents,
     announcements: sortedAnnouncements,
     sourceStatus: {
@@ -484,6 +518,8 @@ export async function buildDiscordSummary(
         contentsFetchedAt: contentResult.fetchedAt,
         announcementsAvailable: announcementResult.available,
         announcementsFetchedAt: announcementResult.fetchedAt,
+        courseworkAvailable: coursework?.available ?? false,
+        courseworkFetchedAt: coursework?.fetchedAt ?? null,
       },
     },
     errors: [

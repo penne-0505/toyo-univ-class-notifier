@@ -35,6 +35,7 @@ const SOURCE_COMMANDS: Array<[RegExp, string]> = [
   [/^output\/toyo\/registration-(?:data\.json|summary\.md)$/, 'toyo:sync'],
   [/^output\/toyo\/toyonet-ace-assignments\.json$/, 'toyo:sync | toyo:watch'],
   [/^output\/toyo\/announcements\.json$/, 'toyo:sync | toyo:watch'],
+  [/^output\/toyo\/toyonet-ace-coursework\.json$/, 'toyo:coursework'],
   [/^output\/toyo\/toyonet-ace-contents\.json$/, 'toyo:sync'],
   [/^output\/toyo\/academic-calendar\.json$/, 'toyo:sync'],
   [/^output\/toyo\/credit-summary\./, 'toyo:credits'],
@@ -49,14 +50,118 @@ function sourceCommandFor(rel: string): string {
   return SOURCE_COMMANDS.find(([p]) => p.test(rel))?.[1] ?? 'unknown';
 }
 
-type Options = { dryRun: boolean; includeCandidates: boolean; force: boolean };
+type Options = { dryRun: boolean; includeCandidates: boolean; force: boolean; pushAllApi?: boolean };
 
 export type PublishResult = {
   changedFiles: string[];
   deletedFiles: string[];
   committed: boolean;
   pushed: boolean;
+  /** Worker API への配信結果。TOYO_API_URL / TOYO_API_WRITE_KEY 未設定・dry-run のときは null。 */
+  api: ApiPushResult | null;
 };
+
+export type ApiPushResult = { put: number; deleted: number; failed: number };
+
+const API_PENDING_PATH = path.join(repoRoot, 'state', 'toyo-api-pending.json');
+
+type ApiPending = { put: string[]; delete: string[] };
+
+async function loadApiPending(): Promise<ApiPending> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(API_PENDING_PATH, 'utf8')) as Partial<ApiPending>;
+    return { put: parsed.put ?? [], delete: parsed.delete ?? [] };
+  } catch {
+    return { put: [], delete: [] };
+  }
+}
+
+async function saveApiPending(pending: ApiPending): Promise<void> {
+  await fs.mkdir(path.dirname(API_PENDING_PATH), { recursive: true });
+  await fs.writeFile(API_PENDING_PATH, JSON.stringify(pending) + '\n', 'utf8');
+}
+
+function contentTypeOf(rel: string): string {
+  if (rel.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (rel.endsWith('.md')) return 'text/markdown; charset=utf-8';
+  if (rel.endsWith('.html')) return 'text/html; charset=utf-8';
+  return 'application/octet-stream';
+}
+
+/**
+ * 変化したファイルと meta.json を Worker（toyo-data-api）へ PUT/DELETE する。
+ * GitHub が正本なので、失敗してもログに出すだけで例外は投げない。
+ * 失敗したパスは state/toyo-api-pending.json に残し、次回の実行で再送する。
+ */
+async function pushToApi(args: {
+  sources: Map<string, string>;
+  putPaths: string[];
+  deletePaths: string[];
+  meta: unknown | null;
+}): Promise<ApiPushResult | null> {
+  const baseUrl = process.env.TOYO_API_URL?.trim().replace(/\/+$/, '');
+  const key = process.env.TOYO_API_WRITE_KEY?.trim();
+  if (!baseUrl || !key) return null;
+
+  const pending = await loadApiPending();
+  const putSet = new Set([...pending.put, ...args.putPaths]);
+  const delSet = new Set([...pending.delete, ...args.deletePaths]);
+  for (const rel of delSet) putSet.delete(rel);
+  const result: ApiPushResult = { put: 0, deleted: 0, failed: 0 };
+  const next: ApiPending = { put: [], delete: [] };
+
+  const request = async (method: string, url: string, body?: Buffer, contentType?: string): Promise<void> => {
+    const res = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${key}`, ...(contentType ? { 'Content-Type': contentType } : {}) },
+      body: body as unknown as BodyInit | undefined,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
+  };
+  const urlFor = (rel: string) => `${baseUrl}/v1/files/${rel.split('/').map(encodeURIComponent).join('/')}`;
+
+  for (const rel of [...putSet].sort()) {
+    const abs = args.sources.get(rel);
+    try {
+      if (!abs) continue; // 既にローカルから消えている（次回の削除で拾う）
+      await request('PUT', urlFor(rel), await fs.readFile(abs), contentTypeOf(rel));
+      result.put++;
+    } catch (error) {
+      result.failed++;
+      next.put.push(rel);
+      console.error(`[publish] api PUT ${rel} failed: ${(error as Error).message}`);
+    }
+  }
+  for (const rel of [...delSet].sort()) {
+    try {
+      assertAllowed(rel);
+      await request('DELETE', urlFor(rel));
+      result.deleted++;
+    } catch (error) {
+      result.failed++;
+      next.delete.push(rel);
+      console.error(`[publish] api DELETE ${rel} failed: ${(error as Error).message}`);
+    }
+  }
+  // meta は最後（updatedAt = 最後の meta PUT）。ファイルが欠けたまま新しい publishedAt を見せないため、失敗があれば送らない。
+  if (args.meta !== null && result.failed === 0) {
+    try {
+      await request('PUT', `${baseUrl}/v1/meta`, Buffer.from(JSON.stringify(args.meta), 'utf8'), 'application/json');
+    } catch (error) {
+      result.failed++;
+      console.error(`[publish] api PUT meta failed: ${(error as Error).message}`);
+    }
+  } else if (args.meta !== null) {
+    console.error('[publish] api: skipped meta PUT because some file transfers failed');
+  }
+  try {
+    await saveApiPending(next);
+  } catch (error) {
+    console.error(`[publish] failed to save api pending state: ${(error as Error).message}`);
+  }
+  return result;
+}
 
 async function walk(absDir: string, relDir: string, out: Map<string, string>): Promise<void> {
   let entries;
@@ -221,38 +326,62 @@ export async function publish(options: Options): Promise<PublishResult> {
         ? `[publish] dry-run: would commit ${changedFiles.length + deletedFiles.length} file(s) + meta.json and push`
         : '[publish] dry-run: no content changes; nothing would be committed'
     );
-    return { changedFiles, deletedFiles, committed: false, pushed: false };
+    return { changedFiles, deletedFiles, committed: false, pushed: false, api: null };
   }
 
-  await fs.writeFile(path.join(dataRepoDir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n', 'utf8');
-
-  // 前回の commit 失敗などで meta.json 以外の未コミット変更が残っていれば、それも拾う
-  const leftover = (await git(['status', '--porcelain', '--untracked-files=all']))
-    .split('\n')
-    .filter((line) => line !== '' && !line.endsWith(' meta.json'));
-
+  // GitHub（正本）への commit/push。失敗しても Worker への配信は試みる（エラーは最後に投げ直す）。
   let committed = false;
-  if (shouldCommit || leftover.length > 0) {
-    await git(['add', '-A']);
-    const dirty = (await git(['status', '--porcelain'])) !== '';
-    if (dirty) {
-      const n = Math.max(changedFiles.length + deletedFiles.length, leftover.length);
-      const identity: string[] = [];
-      if (!(await git(['config', 'user.name'], { allowFail: true }))) identity.push('-c', 'user.name=toyo-publisher');
-      if (!(await git(['config', 'user.email'], { allowFail: true }))) {
-        identity.push('-c', 'user.email=toyo-publisher@users.noreply.github.com');
+  let pushed = false;
+  let gitError: unknown = null;
+  try {
+    await fs.writeFile(path.join(dataRepoDir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n', 'utf8');
+
+    // 前回の commit 失敗などで meta.json 以外の未コミット変更が残っていれば、それも拾う
+    const leftover = (await git(['status', '--porcelain', '--untracked-files=all']))
+      .split('\n')
+      .filter((line) => line !== '' && !line.endsWith(' meta.json'));
+
+    if (shouldCommit || leftover.length > 0) {
+      await git(['add', '-A']);
+      const dirty = (await git(['status', '--porcelain'])) !== '';
+      if (dirty) {
+        const n = Math.max(changedFiles.length + deletedFiles.length, leftover.length);
+        const identity: string[] = [];
+        if (!(await git(['config', 'user.name'], { allowFail: true }))) identity.push('-c', 'user.name=toyo-publisher');
+        if (!(await git(['config', 'user.email'], { allowFail: true }))) {
+          identity.push('-c', 'user.email=toyo-publisher@users.noreply.github.com');
+        }
+        await git([...identity, 'commit', '-m', `sync ${formatJst(now)} (${n})`]);
+        committed = true;
       }
-      await git([...identity, 'commit', '-m', `sync ${formatJst(now)} (${n})`]);
-      committed = true;
     }
+
+    if (committed || (await hasUnpushedCommits())) {
+      await pushWithRetry();
+      pushed = true;
+    }
+  } catch (error) {
+    gitError = error;
   }
 
-  let pushed = false;
-  if (committed || (await hasUnpushedCommits())) {
-    await pushWithRetry();
-    pushed = true;
+  // Worker API への配信（任意）。GitHub の成否とは独立で、失敗しても終了コードは変えない。
+  let api: ApiPushResult | null = null;
+  try {
+    const pushAll = options.pushAllApi === true;
+    const hasChange = changedFiles.length + deletedFiles.length > 0;
+    api = await pushToApi({
+      sources,
+      putPaths: pushAll ? [...sources.keys()] : changedFiles,
+      deletePaths: deletedFiles,
+      // meta は変化があったとき・--force（daily）・全送信のときだけ送る（5 分ごとの無駄な KV 書き込みを避ける）
+      meta: hasChange || options.force || pushAll ? meta : null,
+    });
+  } catch (error) {
+    console.error(`[publish] api push failed: ${(error as Error).message}`);
   }
-  return { changedFiles, deletedFiles, committed, pushed };
+
+  if (gitError) throw gitError;
+  return { changedFiles, deletedFiles, committed, pushed, api };
 }
 
 function parseArgs(argv: string[]): Options {
@@ -261,7 +390,8 @@ function parseArgs(argv: string[]): Options {
     if (arg === '--dry-run') options.dryRun = true;
     else if (arg === '--include-candidates') options.includeCandidates = true;
     else if (arg === '--force') options.force = true;
-    else throw new Error(`Unknown option: ${arg}\nUsage: npm run toyo:publish -- [--dry-run] [--include-candidates] [--force]`);
+    else if (arg === '--push-all-api') options.pushAllApi = true;
+    else throw new Error(`Unknown option: ${arg}\nUsage: npm run toyo:publish -- [--dry-run] [--include-candidates] [--force] [--push-all-api]`);
   }
   return options;
 }
@@ -269,7 +399,7 @@ function parseArgs(argv: string[]): Options {
 export async function main(): Promise<void> {
   const result = await publish(parseArgs(process.argv.slice(2)));
   console.log(
-    `[publish] changed=${result.changedFiles.length} deleted=${result.deletedFiles.length} committed=${result.committed ? 'yes' : 'no'} pushed=${result.pushed ? 'yes' : 'no'}`
+    `[publish] changed=${result.changedFiles.length} deleted=${result.deletedFiles.length} committed=${result.committed ? 'yes' : 'no'} pushed=${result.pushed ? 'yes' : 'no'} api=${result.api ? `put:${result.api.put}/del:${result.api.deleted}/failed:${result.api.failed}` : 'off'}`
   );
 }
 

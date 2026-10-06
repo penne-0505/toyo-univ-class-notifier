@@ -15,6 +15,7 @@ import {
   type DiscordSummary,
 } from './lib/toyo-summary';
 import { type Assignment, type CourseContent } from './lib/toyonet-ace';
+import { type CourseworkBrief, type CourseworkScheduleEntry } from './lib/toyonet-ace-coursework';
 import { type Announcement } from './lib/toyo-announcements';
 import {
   academicSchedulePath,
@@ -102,6 +103,16 @@ type AgentClass = {
   } | null;
   /** data/grading-rules.json にある科目だけ。無ければ null。 */
   gradingRules: AgentGradingRules | null;
+  /** ACE のコース別提出状況。toyo:coursework 未実行 / ACE に無い科目は null。 */
+  coursework: CourseworkBrief | null;
+  /** 足切りに「提出回数」がある科目のみ。remaining は基準回数までに必要な残り提出回数（概算。条件の向きは text を優先）。 */
+  submissionCutoff: {
+    threshold: number;
+    submitted: number;
+    remaining: number;
+    countedTypes: string;
+    text: string;
+  } | null;
   relatedAssignments: AgentAssignment[];
   relatedContents: AgentContent[];
   relatedAnnouncements: AgentAnnouncement[];
@@ -142,6 +153,11 @@ type AgentContext = {
     horizonDays: number;
     dueWithinHorizon: AgentAssignment[];
     deadlineUnknown: AgentAssignment[];
+  };
+  /** 今後 14 日に締切が来る coursework 項目（受付開始待ちを含む）。summary.courseworkSchedule を実行時点で絞り直したもの。 */
+  courseworkSchedule: {
+    horizonDays: number;
+    items: CourseworkScheduleEntry[];
   };
   announcements: {
     important: AgentAnnouncement[];
@@ -421,7 +437,39 @@ function summarizePeriod(period: PeriodView): AgentPeriod {
   };
 }
 
+function computeSubmissionCutoff(
+  gradingRules: AgentGradingRules | null,
+  coursework: CourseworkBrief | null
+): AgentClass['submissionCutoff'] {
+  if (!gradingRules || !coursework) return null;
+  const cutoff = gradingRules.cutoffs.find(
+    (item) => item.type === 'submission-count' && item.unit === 'count' && item.threshold !== null
+  );
+  if (!cutoff || cutoff.threshold === null) return null;
+  const byType = coursework.submittedByType ?? { report: 0, query: 0 };
+  const mentionsReport = /レポート/.test(cutoff.text);
+  const mentionsQuery = /小テスト|確認テスト|テスト/.test(cutoff.text);
+  let submitted = coursework.submitted;
+  let countedTypes = 'report+query';
+  if (mentionsReport && !mentionsQuery) {
+    submitted = byType.report;
+    countedTypes = 'report';
+  } else if (mentionsQuery && !mentionsReport) {
+    submitted = byType.query;
+    countedTypes = 'query';
+  }
+  return {
+    threshold: cutoff.threshold,
+    submitted,
+    remaining: Math.max(0, cutoff.threshold - submitted),
+    countedTypes,
+    text: truncate(cutoff.text, 160),
+  };
+}
+
 function summarizeClass(entry: DetailedClassSummary, date: string): AgentClass {
+  const gradingRules = summarizeGradingRules(entry.classInfo.courseCode);
+  const coursework = entry.coursework ?? null;
   return {
     courseName: entry.classInfo.courseName,
     courseCode: entry.classInfo.courseCode,
@@ -448,7 +496,9 @@ function summarizeClass(entry: DetailedClassSummary, date: string): AgentClass {
           textbook: entry.syllabus.textbook ? truncate(entry.syllabus.textbook, 180) : null,
         }
       : null,
-    gradingRules: summarizeGradingRules(entry.classInfo.courseCode),
+    gradingRules,
+    coursework,
+    submissionCutoff: computeSubmissionCutoff(gradingRules, coursework),
     relatedAssignments: entry.relatedAssignments.map(summarizeAssignment),
     relatedContents: entry.relatedContents.slice(0, 8).map(summarizeContent),
     relatedAnnouncements: entry.relatedAnnouncements.slice(0, 8).map(summarizeAnnouncement),
@@ -522,6 +572,7 @@ function buildAgentNotes(): string[] {
     'For "what period is it now" (registration, lottery, add-registration, withdrawal), use the Periods section / data/academic-schedule.json. Dates listed under its unknown[] are not in the course guide; do not guess them.',
     'For "which session number is today" use sessionNumber on each class (null = not computable, e.g. intensive course or before classes start). Holidays are counted as no-class days; whether the university holds classes on holidays is unknown.',
     'For "can I skip this assignment / what happens if I miss it" use gradingRules on each class (data/grading-rules.json). If reviewed is false or warnings is non-empty, quote the syllabus grading text and state the uncertainty.',
+    'For quizzes/reports that are not yet open (受付開始待ち) or per-course submission counts, use courseworkSchedule / each class coursework (output/toyo/toyonet-ace-coursework.json). submitted=null means the ACE list did not show a submission state. The submission-count cutoff remaining is approximate: read the cutoff text for the direction of the condition.',
   ];
 }
 
@@ -639,6 +690,13 @@ async function buildContext(options: CliOptions): Promise<AgentContext> {
         .slice(0, 12)
         .map(summarizeAssignment),
     },
+    courseworkSchedule: {
+      horizonDays: 14,
+      items: (summary.courseworkSchedule ?? []).filter((item) => {
+        const due = Date.parse(item.dueAt);
+        return due >= now.getTime() && due <= now.getTime() + 14 * 24 * 60 * 60 * 1000;
+      }),
+    },
     announcements: {
       important: importantAnnouncements,
       recentOther: recentOtherAnnouncements,
@@ -692,6 +750,19 @@ function renderPeriod(period: AgentPeriod): string {
   return `- [${period.semester}] ${period.label}: ${when}${offset}${period.note ? ` — ${period.note}` : ''}`;
 }
 
+const courseworkTypeLabel: Record<string, string> = { report: 'レポート', query: '小テスト', survey: 'アンケート' };
+const courseworkStatusLabel: Record<string, string> = { open: '受付中', waiting: '受付開始待ち', closed: '受付終了', unknown: '状態不明' };
+
+function jstMinuteLabel(iso: string): string {
+  return iso.replace('T', ' ').slice(0, 16);
+}
+
+function renderCourseworkEntry(item: CourseworkScheduleEntry): string {
+  const submitted = item.submitted === true ? '提出済' : item.submitted === false ? '未提出' : '提出状況不明';
+  const opens = item.status === 'waiting' && item.opensAt ? ` 受付開始 ${jstMinuteLabel(item.opensAt)}` : '';
+  return `- ${jstMinuteLabel(item.dueAt)} 締切 ${item.portalCourseName ?? item.courseName}: ${item.title} [${courseworkTypeLabel[item.type] ?? item.type}/${courseworkStatusLabel[item.status] ?? item.status}/${submitted}]${opens}`;
+}
+
 function appendClassSection(lines: string[], title: string, classes: AgentClass[]): void {
   lines.push(`## ${title}`);
   if (classes.length === 0) {
@@ -723,6 +794,14 @@ function appendClassSection(lines: string[], title: string, classes: AgentClass[
       if (rules.warnings.length > 0) {
         lines.push(`  - 成績ルールの注意: ${rules.warnings.map((warning) => truncate(warning, 100)).join(' / ')}`);
       }
+    }
+    if (entry.coursework) {
+      const cw = entry.coursework;
+      const cutoff = entry.submissionCutoff
+        ? ` / 足切りまで残り ${entry.submissionCutoff.remaining}（基準 ${entry.submissionCutoff.threshold} 回・提出 ${entry.submissionCutoff.submitted} 回、対象: ${entry.submissionCutoff.countedTypes}。条件の向きは足切り本文を優先）`
+        : '';
+      const next = cw.nextOpensAt ? ` / 次の受付開始 ${jstMinuteLabel(cw.nextOpensAt)}` : '';
+      lines.push(`  - 提出状況: 済 ${cw.submitted} / 未 ${cw.notSubmitted}（受付中 ${cw.notSubmittedOpen}・終了 ${cw.closedNotSubmitted}）/ 受付開始待ち ${cw.waiting}${cutoff}${next}`);
     }
     if (entry.syllabus?.firstTopic) {
       lines.push(`  - シラバス先頭トピック: ${entry.syllabus.firstTopic}`);
@@ -763,6 +842,7 @@ function buildMarkdown(context: AgentContext): string {
     `- ToyoNet-ACE assignments: available=${context.sourceStatus.toyonetAce.available}, fetchedAt=${context.sourceStatus.toyonetAce.fetchedAt ?? 'unknown'}`,
     `- ToyoNet-ACE contents: available=${context.sourceStatus.toyonetAce.contentsAvailable}, fetchedAt=${context.sourceStatus.toyonetAce.contentsFetchedAt ?? 'unknown'}`,
     `- ToyoNet-ACE announcements: available=${context.sourceStatus.toyonetAce.announcementsAvailable}, fetchedAt=${context.sourceStatus.toyonetAce.announcementsFetchedAt ?? 'unknown'}`,
+    `- ToyoNet-ACE coursework: available=${context.sourceStatus.toyonetAce.courseworkAvailable ?? false}, fetchedAt=${context.sourceStatus.toyonetAce.courseworkFetchedAt ?? 'unknown'}`,
     '',
     '## Warnings',
   ];
@@ -831,6 +911,14 @@ function buildMarkdown(context: AgentContext): string {
     lines.push(
       ...context.assignments.deadlineUnknown.map((assignment) => `- ${renderAssignment(assignment)}`)
     );
+  }
+  lines.push('');
+
+  lines.push(`## Upcoming Coursework (${context.courseworkSchedule.horizonDays} days)`);
+  if (context.courseworkSchedule.items.length === 0) {
+    lines.push('- なし（toyo:coursework 未取得の場合も空）');
+  } else {
+    lines.push(...context.courseworkSchedule.items.map(renderCourseworkEntry));
   }
   lines.push('');
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run toyo-coursework hourly (at :20)
+
+[Timer]
+OnCalendar=*:20:00
+Persistent=false
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

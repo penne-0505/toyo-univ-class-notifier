@@ -65,6 +65,7 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 - `toyo:refresh-session`: `toyo:login` の別名。期限切れ時に使う。
 - `toyo:export-enrollment`: 履修登録確認表だけを更新する。
 - `toyo:syllabus`: 履修登録確認表の科目を指定して、シラバスを単体取得する（学期内キャッシュあり）。
+- `toyo:syllabus:seed`: `registration-candidates.json` の `candidates[].syllabus` から登録中科目のシラバスキャッシュを一括生成する（時間割検索を経由しない。既存ファイルは `--force` で上書き）。学期切替直後に `toyo:candidates` を実行した後で使う。
 - `toyo:calendar`: 内閣府CSVから祝日データを取得する。
 - `toyo:announcements`: ToyoNet-ACEのお知らせ（休講・補講・教室変更等）を取得する。
 - `toyo:context`: `summary.json` が古い場合は `toyo:sync` を試み、今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。既存出力だけで作る場合は `--no-sync` を付ける。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
@@ -107,7 +108,8 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 ```
 toyo-watch.timer (5分)  → toyo:watch ─ 変化あり → summary 再生成 → toyo:context --no-sync ─┐
-toyo-daily.timer (04:30) → toyo:daily (sync/credits/lottery/context) ─────────────────────┤
+toyo-coursework.timer (毎時:20) → toyo:coursework → context --no-sync ───────────────────┤
+toyo-daily.timer (04:30) → toyo:daily (coursework/sync/credits/lottery/context) ──────────┤
                                                                                           ▼
                                        toyo:publish → ~/toyo-data → GitHub (private)
 Discord bot ← output/ を読むだけ（上記と独立）
@@ -116,9 +118,18 @@ Discord bot ← output/ を読むだけ（上記と独立）
 - 公開対象は allowlist（`output/toyo/**`、`output/bot/summary.json`、`data/**`）のみ。`artifacts/`・`playwright/`・`.env*` はコード上含まれない。`registration-candidates.json`（約 1.6MB）は `--include-candidates`（daily）のときだけ。
 - 差分判定は `fetchedAt` / `generatedAt` / `builtAt` などの時刻を除いたハッシュ。時刻だけ変わったファイルは書き換えず、commit にも含めない。`meta.json` だけが変わる場合も commit しない（daily は `--force` で毎日 1 commit 作り、生存確認を兼ねる）。
 - watch は `state/watch-state.json` に連続失敗数と次回許可時刻を持つ。失敗 2 回で 15 分、4 回で 30 分スキップし、成功で解除。ログイン切れ時は `toyo:login` 後に `rm state/watch-state.json`。
-- watch と daily は `flock /tmp/toyo-fetch.lock` で排他。導入・確認・停止は `deploy/README.md`。
+- watch・daily・coursework は `flock /tmp/toyo-fetch.lock` で排他（Playwright セッションは同時に 1 つ）。coursework は取得後に summary.json も再生成し（`--no-summary` で省略）、各授業・課題に `coursework`（提出済/未提出数・次の受付開始）、トップレベルに `courseworkSchedule`（今後 14 日、受付開始待ちを含む）を載せる。導入・確認・停止は `deploy/README.md`。
 - 注意: watch が「変化なし」の間は summary.json の `generatedAt` が古いままになる。`toyo:context` の既定 30 分 stale 判定を使う場合は `--no-sync` を付けても警告が出うる。鮮度は `fetchedAt` の新しさではなく、watch の最終確認時刻（`state/watch-state.json` の `lastSuccessAt`）で見ること。
 - 注意: `registration-data.json` には学籍番号・氏名が含まれ、そのまま push される（private repo 前提）。
+
+### Worker 経由の読み方（クラウドのエージェント向け）
+
+GitHub を読めないエージェントのため、`toyo:publish` は変化したファイルと `meta.json` を Cloudflare Worker（`worker/`、KV 保存）へも PUT する。GitHub が正本で、Worker への配信が失敗しても publish の終了コードは変わらない（失敗したパスは `state/toyo-api-pending.json` に残り、次回再送）。
+
+- 配信条件: `.env.local` に `TOYO_API_URL` と `TOYO_API_WRITE_KEY` がある。`--dry-run` では送らない。初回・作り直し時は `npm run toyo:publish -- --push-all-api`。
+- 読み方: `curl -H "Authorization: Bearer $READ_KEY" $URL/v1/context`（まずこれ）。`/v1/meta`、`/v1/assignments?within=7d`、`/v1/today`、`/v1/files/{path}` など。科目単位なら `/v1/courses`（一覧）と `/v1/courses/{授業コード|ACE courseId|科目名}`（時間割・第N回・シラバス・成績ルール・提出状況・課題・お知らせを 1 回で）。`/v1/assignments?within=14d&includeWaiting=1` は受付開始待ちの小テストも混ぜ、各要素に配点・足切り・提出数（`course`）を付ける。一覧と鍵の扱い・ローテーションは `worker/README.md`。
+- 鮮度は GitHub と同じ読み方: `/v1/meta` の `publishedAt` が 24 時間超なら取得側停止。`updatedAt` は最後に meta を PUT した時刻。
+- 読み取りキーはエージェント側、書き込みキーはこのマシンの `.env.local` だけに置く。
 
 ## 同期後に確認するファイル
 
