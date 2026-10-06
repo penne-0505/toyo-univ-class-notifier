@@ -13,6 +13,7 @@ import {
   type CourseContent,
 } from './toyonet-ace';
 import { fetchSyllabusWithCache, type SyllabusRecord } from './toyo-syllabus';
+import { sessionNumberFor } from './toyo-academic-schedule';
 import {
   collectToyoNetAceAnnouncements,
   type Announcement,
@@ -79,6 +80,8 @@ export type DetailedClassNotes = {
 
 export type DetailedClassSummary = {
   classInfo: DiscordCourseSummary;
+  /** その曜日の第何回授業日か。academic-schedule.json が無い・集中講義・授業期間外などで計算できなければ null。 */
+  sessionNumber: number | null;
   syllabus: DetailedClassNotes | null;
   relatedAssignments: Assignment[];
   relatedContents: CourseContent[];
@@ -390,6 +393,7 @@ async function buildDetailedClassesForOffset(
 
       return {
         classInfo,
+        sessionNumber: sessionNumberFor(classInfo.startsAt.slice(0, 10), classInfo.day),
         syllabus,
         relatedAssignments: relatedAssignments(assignments, classInfo.courseName),
         relatedContents: relatedContents(contents, classInfo.courseName),

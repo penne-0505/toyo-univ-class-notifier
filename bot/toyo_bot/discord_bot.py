@@ -5,17 +5,21 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from .config import Settings
-from .models import ClassSummary, Summary
+from .models import Assignment, ClassSummary, Summary
 from .summary_service import SummaryService
 from .sync_service import SyncResult, SyncService
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_NOTIFY_TIMES = ("07:00", "22:00")
+ASSIGNMENT_RECORD_RETENTION_DAYS = 60
 
 
 def _parse_time(value: str) -> str:
@@ -62,7 +66,7 @@ class BotState:
     async def get_notify_times(self) -> tuple[str, ...]:
         async with self._lock:
             stored = self._data.get("notify_times")
-            return tuple(stored) if stored is not None else ()
+            return tuple(stored) if stored is not None else DEFAULT_NOTIFY_TIMES
 
     async def set_notify_times(self, times: tuple[str, ...]) -> None:
         async with self._lock:
@@ -90,6 +94,86 @@ class BotState:
             cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
             self._data["sent_keys"] = {k: v for k, v in sent.items() if v >= cutoff}
             self._save()
+
+    async def get_known_assignment_ids(self) -> set[str]:
+        async with self._lock:
+            return set(self._assignment_records_unlocked().keys())
+
+    async def save_assignment_snapshot(
+        self, assignments: tuple[Assignment, ...], seen_at: datetime
+    ) -> None:
+        async with self._lock:
+            records = self._assignment_records_unlocked()
+            cutoff = seen_at - timedelta(days=ASSIGNMENT_RECORD_RETENTION_DAYS)
+            pruned: dict[str, dict[str, Any]] = {}
+            for assignment_id, record in records.items():
+                last_seen_raw = str(record.get("last_seen_at", ""))
+                try:
+                    last_seen = datetime.fromisoformat(last_seen_raw)
+                except ValueError:
+                    continue
+                if last_seen >= cutoff:
+                    pruned[assignment_id] = record
+
+            seen_at_text = seen_at.isoformat()
+            for assignment in assignments:
+                previous = pruned.get(assignment.assignment_id, {})
+                pruned[assignment.assignment_id] = {
+                    "first_seen_at": str(previous.get("first_seen_at") or seen_at_text),
+                    "last_seen_at": seen_at_text,
+                    "course_name": assignment.course_name,
+                    "title": assignment.title,
+                    "due_at": assignment.due_at.isoformat() if assignment.due_at else None,
+                    "status": assignment.status,
+                }
+
+            assignment_state = self._data.setdefault("assignment_notifications", {})
+            assignment_state["known_assignments"] = pruned
+            self._save()
+
+    async def record_sync_failure(self, result: SyncResult) -> int:
+        async with self._lock:
+            state = self._data.setdefault("sync_failure", {})
+            count = int(state.get("consecutive_count") or 0) + 1
+            state["consecutive_count"] = count
+            state["last_failed_at"] = result.finished_at.isoformat()
+            state["last_error_message"] = result.error_message or "Unknown error"
+            self._save()
+            return count
+
+    async def reset_sync_failures(self) -> None:
+        async with self._lock:
+            state = self._data.setdefault("sync_failure", {})
+            if state.get("consecutive_count") == 0:
+                return
+            state["consecutive_count"] = 0
+            state["last_recovered_at"] = datetime.now(timezone.utc).isoformat()
+            self._save()
+
+    async def should_warn_sync_failure(self, warning_date: str) -> bool:
+        async with self._lock:
+            state = self._data.setdefault("sync_failure", {})
+            count = int(state.get("consecutive_count") or 0)
+            return count >= 3 and state.get("last_warning_date") != warning_date
+
+    async def mark_sync_failure_warned(self, warning_date: str) -> None:
+        async with self._lock:
+            state = self._data.setdefault("sync_failure", {})
+            state["last_warning_date"] = warning_date
+            self._save()
+
+    def _assignment_records_unlocked(self) -> dict[str, dict[str, Any]]:
+        assignment_state = self._data.setdefault("assignment_notifications", {})
+        records = assignment_state.get("known_assignments", {})
+        if not isinstance(records, dict):
+            assignment_state["known_assignments"] = {}
+            return {}
+        normalized: dict[str, dict[str, Any]] = {}
+        for assignment_id, record in records.items():
+            if isinstance(record, dict):
+                normalized[str(assignment_id)] = record
+        assignment_state["known_assignments"] = normalized
+        return normalized
 
 
 class ToyoBotCog(commands.Cog):
@@ -122,8 +206,12 @@ class ToyoBotCog(commands.Cog):
     @tasks.loop(seconds=1800)
     async def sync_loop(self) -> None:
         result = await self.sync_service.runSync()
-        if not result.success:
-            await self._notify_sync_failure(result)
+        if result.success:
+            await self.state.reset_sync_failures()
+            return
+        failure_count = await self.state.record_sync_failure(result)
+        if failure_count >= 3:
+            await self._notify_sync_failure(result, failure_count)
 
     @sync_loop.before_loop
     async def before_sync_loop(self) -> None:
@@ -148,7 +236,21 @@ class ToyoBotCog(commands.Cog):
             if self.summary_service.should_send_daily(now, time_text):
                 key = self.summary_service.daily_key(now, time_text)
                 if not await self.state.was_sent(key):
-                    await channel.send(self.summary_service.format_daily_summary(summary))
+                    known_assignment_ids = await self.state.get_known_assignment_ids()
+                    new_assignment_ids = {
+                        assignment.assignment_id
+                        for assignment in summary.upcoming_assignments
+                        if assignment.assignment_id not in known_assignment_ids
+                    } if summary.ace_available else set()
+
+                    await channel.send(
+                        self.summary_service.format_daily_summary(
+                            summary,
+                            new_assignment_ids=new_assignment_ids,
+                        )
+                    )
+                    if summary.ace_available:
+                        await self.state.save_assignment_snapshot(summary.upcoming_assignments, now)
                     await self.state.mark_sent(key)
 
         # class reminder
@@ -221,6 +323,7 @@ class ToyoBotCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        await self.state.reset_sync_failures()
         summary = await self._safe_load_summary()
         msg = "同期が完了しました。"
         if summary is not None:
@@ -343,17 +446,20 @@ class ToyoBotCog(commands.Cog):
             return None
         return fetched if isinstance(fetched, discord.TextChannel) else None
 
-    async def _notify_sync_failure(self, result: SyncResult) -> None:
+    async def _notify_sync_failure(self, result: SyncResult, failure_count: int) -> None:
         channel = await self._get_notify_channel()
         if channel is None:
             return
-        key = f"sync-error:{result.finished_at.date().isoformat()}:{result.error_message}"
-        if await self.state.was_sent(key):
+        warning_date = datetime.now(self.settings.timezone).date().isoformat()
+        if not await self.state.should_warn_sync_failure(warning_date):
             return
         await channel.send(
-            f"⚠️ 同期に失敗しました。\n{result.error_message or 'Unknown error'}"
+            "⚠️ 同期が3回以上連続で失敗しています。\n"
+            f"連続失敗: {failure_count}回\n"
+            f"エラー: {result.error_message or 'Unknown error'}\n"
+            "本日の同期失敗警告はこれ以降省略します。"
         )
-        await self.state.mark_sent(key)
+        await self.state.mark_sync_failure_warned(warning_date)
 
 
 class ToyoDiscordBot(commands.Bot):

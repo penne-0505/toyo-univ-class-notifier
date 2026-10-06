@@ -1,0 +1,239 @@
+{
+  "academicYear": "2026",
+  "source": "docs/2026年度経営学部履修登録のしおり.pdf（p.2 履修登録スケジュール / p.3 履修登録 / p.4 特別授業期間 / p.5 抽選・追加登録 / p.6 確認表・取消申請）",
+  "dateFormat": "start/end は ISO8601 JST。しおりが日付のみを示す期間は dateOnly: true とし、YYYY-MM-DD の両端を含む（終日扱い）。時刻つきは +09:00 付き。",
+  "periods": [
+    {
+      "kind": "registration",
+      "semester": "春学期",
+      "label": "履修登録期間（2〜4年生）",
+      "start": "2026-03-27T09:00:00+09:00",
+      "end": "2026-04-04T03:59:00+09:00",
+      "note": "対象: 2〜4年生。春学期科目・第1/第2クォーター科目。ToyoNet-G で登録する。"
+    },
+    {
+      "kind": "registration",
+      "semester": "春学期",
+      "label": "履修登録期間（1年生）",
+      "start": "2026-04-04T09:00:00+09:00",
+      "end": "2026-04-08T03:59:00+09:00",
+      "note": "対象: 1年生。春学期科目・第1/第2クォーター科目。"
+    },
+    {
+      "kind": "special-class",
+      "semester": "春学期",
+      "label": "特別授業期間",
+      "start": "2026-04-09",
+      "end": "2026-04-11",
+      "dateOnly": true,
+      "note": "T-Weeks の後ろ3日間程度。+2回分（オンデマンド/対面）の授業を行う科目がある。詳細は各シラバス。"
+    },
+    {
+      "kind": "classes-start",
+      "semester": "春学期",
+      "label": "通常授業開始",
+      "start": "2026-04-13",
+      "end": null,
+      "dateOnly": true,
+      "note": ""
+    },
+    {
+      "kind": "lottery-announce",
+      "semester": "春学期",
+      "label": "抽選実施科目発表",
+      "start": "2026-04-14",
+      "end": null,
+      "dateOnly": true,
+      "note": "「随時」発表。ToyoNet-G 学生メニュー > 履修登録 > 抽選実施科目一覧。抽選実施科目は追加登録期間に追加・削除できない。"
+    },
+    {
+      "kind": "lottery-result",
+      "semester": "春学期",
+      "label": "抽選結果発表",
+      "start": "2026-04-15T17:00:00+09:00",
+      "end": null,
+      "note": "17:00 から。抽選結果欄（○当選 / ×落選）を確認。落選科目は履修・ToyoNet-ACE コースが削除される。"
+    },
+    {
+      "kind": "add-registration",
+      "semester": "春学期",
+      "label": "追加登録期間",
+      "start": "2026-04-16T12:20:00+09:00",
+      "end": "2026-04-18T23:59:00+09:00",
+      "note": "先着順・限られた科目のみ。抽選・事前登録・定員到達科目は追加削除不可。抽選に当選した科目は削除不可。"
+    },
+    {
+      "kind": "confirmation-print",
+      "semester": "春学期",
+      "label": "履修登録確認表［確定版］の出力・印刷開始",
+      "start": "2026-04-20",
+      "end": null,
+      "dateOnly": true,
+      "note": "この日以降に印刷またはPDF保存。確定版に載っていない科目は履修登録していないとみなされる。終了日の記載なし。"
+    },
+    {
+      "kind": "withdrawal",
+      "semester": "春学期",
+      "label": "履修科目取消申請（1Q科目）",
+      "start": "2026-05-11",
+      "end": "2026-05-17",
+      "dateOnly": true,
+      "note": "ToyoNet-G 学生メニュー > 履修登録 > 履修取消申請。必修・事前クラス分けの選択必修・卒業要件外科目は取消不可。"
+    },
+    {
+      "kind": "withdrawal-result",
+      "semester": "春学期",
+      "label": "取消申請結果確認日（1Q科目）",
+      "start": "2026-05-20",
+      "end": null,
+      "dateOnly": true,
+      "note": "この日以降に結果を確認。"
+    },
+    {
+      "kind": "withdrawal",
+      "semester": "春学期",
+      "label": "履修科目取消申請（2Q科目）",
+      "start": "2026-06-29",
+      "end": "2026-07-05",
+      "dateOnly": true,
+      "note": "春学期科目（セメスタ科目）の取消申請期間もこの行に属するかはしおりの表からは区別できない。表の行は 1Q科目 / 2Q科目 のみ。"
+    },
+    {
+      "kind": "withdrawal-result",
+      "semester": "春学期",
+      "label": "取消申請結果確認日（2Q科目）",
+      "start": "2026-07-08",
+      "end": null,
+      "dateOnly": true,
+      "note": "この日以降に結果を確認。"
+    },
+    {
+      "kind": "registration",
+      "semester": "秋学期",
+      "label": "履修登録期間",
+      "start": "2026-09-25T09:00:00+09:00",
+      "end": "2026-09-29T03:59:00+09:00",
+      "note": "秋学期科目・第3/第4クォーター科目。学年別の区分はしおりに記載なし。"
+    },
+    {
+      "kind": "special-class",
+      "semester": "秋学期",
+      "label": "特別授業期間",
+      "start": "2026-09-29",
+      "end": "2026-10-01",
+      "dateOnly": true,
+      "note": "T-Weeks の後ろ3日間程度。+2回分の授業を行う科目がある。"
+    },
+    {
+      "kind": "classes-start",
+      "semester": "秋学期",
+      "label": "通常授業開始",
+      "start": "2026-10-02",
+      "end": null,
+      "dateOnly": true,
+      "note": "しおり p.2 の記載は 10月2日（金）。依頼文の前提（10/1 木）とは1日ずれる。10/1 は特別授業期間の最終日。"
+    },
+    {
+      "kind": "lottery-announce",
+      "semester": "秋学期",
+      "label": "抽選実施科目発表",
+      "start": "2026-10-05",
+      "end": null,
+      "dateOnly": true,
+      "note": "「随時」発表。ToyoNet-G 学生メニュー > 履修登録 > 抽選実施科目一覧。抽選実施科目は追加登録期間に追加・削除できない。"
+    },
+    {
+      "kind": "lottery-result",
+      "semester": "秋学期",
+      "label": "抽選結果発表",
+      "start": "2026-10-06T17:00:00+09:00",
+      "end": null,
+      "note": "17:00 から。抽選結果欄（○当選 / ×落選）を確認。落選科目は履修・ToyoNet-ACE コースが削除される。"
+    },
+    {
+      "kind": "add-registration",
+      "semester": "秋学期",
+      "label": "追加登録期間",
+      "start": "2026-10-07T12:20:00+09:00",
+      "end": "2026-10-09T23:59:00+09:00",
+      "note": "先着順・限られた科目のみ。抽選・事前登録・定員到達科目は追加削除不可。抽選に当選した科目は削除不可。ToyoNet-ACE の自己登録は ToyoNet-G に反映されない。"
+    },
+    {
+      "kind": "confirmation-print",
+      "semester": "秋学期",
+      "label": "履修登録確認表［確定版］の出力・印刷開始",
+      "start": "2026-10-10",
+      "end": null,
+      "dateOnly": true,
+      "note": "この日以降に印刷またはPDF保存。確定版に載っていない科目は履修登録していないとみなされる。終了日の記載なし。"
+    },
+    {
+      "kind": "withdrawal",
+      "semester": "秋学期",
+      "label": "履修科目取消申請（3Q科目）",
+      "start": "2026-10-23",
+      "end": "2026-10-29",
+      "dateOnly": true,
+      "note": "ToyoNet-G 学生メニュー > 履修登録 > 履修取消申請。表の行は 3Q科目 / 4Q科目 のみで、秋学期セメスタ科目の取消申請期間がどちらに当たるかはしおりから読み取れない。"
+    },
+    {
+      "kind": "withdrawal-result",
+      "semester": "秋学期",
+      "label": "取消申請結果確認日（3Q科目）",
+      "start": "2026-11-07",
+      "end": null,
+      "dateOnly": true,
+      "note": "この日以降に結果を確認。"
+    },
+    {
+      "kind": "withdrawal",
+      "semester": "秋学期",
+      "label": "履修科目取消申請（4Q科目）",
+      "start": "2027-01-04",
+      "end": "2027-01-10",
+      "dateOnly": true,
+      "note": "年をまたぐ（2027年）。"
+    },
+    {
+      "kind": "withdrawal-result",
+      "semester": "秋学期",
+      "label": "取消申請結果確認日（4Q科目）",
+      "start": "2027-01-14",
+      "end": null,
+      "dateOnly": true,
+      "note": "この日以降に結果を確認。"
+    }
+  ],
+  "terms": [
+    {
+      "semester": "春学期",
+      "classesStart": "2026-04-13",
+      "classesEnd": null,
+      "examPeriod": null,
+      "noClassDays": [],
+      "makeupDays": []
+    },
+    {
+      "semester": "秋学期",
+      "classesStart": "2026-10-02",
+      "classesEnd": null,
+      "examPeriod": null,
+      "noClassDays": [],
+      "makeupDays": []
+    }
+  ],
+  "unknown": [
+    "【方針】学年暦の詳細（授業終了日・試験期間・休講振替・成績発表など）はユーザーの Google カレンダーが正。ここには履修登録関連の期間のみ置き、以下の不明項目はこれ以上埋めない",
+    "terms[春学期].classesEnd: しおりに授業終了日の記載なし（「13週」とのみ記載）",
+    "terms[秋学期].classesEnd: 同上",
+    "terms[*].examPeriod: 試験・補講期間の日付はしおりに記載なし",
+    "terms[*].noClassDays: 大学独自の休講日（入試・学園祭等）はしおりに記載なし。祝日は academic-calendar.json の nationalHolidays 側で扱う",
+    "terms[*].makeupDays: 曜日振替授業日はしおりに記載なし",
+    "祝日に授業を行うかどうか: しおりに記載なし（sessionNumberFor は祝日を授業なしとして数える）",
+    "成績発表日: しおりに記載なし（grade-release 期間は未登録）",
+    "履修登録確認表［確定版］の出力期間の終了日: 「〜」とのみ記載",
+    "秋学期の履修登録期間の学年別区分: 記載なし（春学期のみ 2〜4年 / 1年で区分）",
+    "セメスタ科目（春学期・秋学期通期）の履修科目取消申請期間: 表は 1Q/2Q（春）・3Q/4Q（秋）の行のみ",
+    "T-Weeks（授業開始前10日間程度）の具体的な日付: 特別授業期間（後ろ3日間程度）以外は記載なし"
+  ]
+}

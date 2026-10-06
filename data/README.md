@@ -1,0 +1,20 @@
+# data/
+
+手書き・レビュー済みの静的データ置き場（git 管理）。`output/` はポータル取得や各 script が生成する成果物で、`.gitignore` 対象。
+
+## ファイル
+
+### academic-schedule.json
+
+履修登録のしおり（`docs/2026年度経営学部履修登録のしおり.pdf`）から手で起こした学年暦。履修登録・抽選・追加登録・取消申請の期間、授業開始日などを持つ。
+
+- 学年暦の詳細（授業終了日・試験期間・休講振替・成績発表など）はユーザーの Google カレンダーが正。ここには履修登録関連の期間のみ置き、`unknown` に挙げた項目はこれ以上埋めない。
+- 更新手順: 年度が変わったら新しいしおりを見ながら `periods` / `terms` を手で書き直す。確認は `npx tsx scripts/toyo-academic-schedule.ts --date YYYY-MM-DD`。
+
+### grading-rules.json
+
+科目ごとの成績配分（components）・足切り（cutoffs）。`agent-context` の各授業に `gradingRules` として載る。
+
+- 更新手順: `npm run toyo:grading-rules` がシラバス（`output/toyo/syllabus/`）から下書きを生成し、このファイルを読み書きする。
+- `reviewed: true` の科目は上書きされない。下書きを `sourceText`（シラバス原文）と見比べて直したら `reviewed: true` にする。
+- `reviewed: false` や `warnings` が残る科目は、利用時に原文を引用して不確実性を伝える。

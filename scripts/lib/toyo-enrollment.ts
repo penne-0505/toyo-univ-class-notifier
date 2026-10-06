@@ -37,6 +37,14 @@ export type EnrollmentData = {
   courses: Course[];
 };
 
+const WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日'];
+/** 曜日・時限を持たない科目（集中講義・オンデマンド）の day 値 */
+export const INTENSIVE_DAY_LABEL = '集中';
+
+export function isIntensiveCourse(course: Pick<Course, 'day'>): boolean {
+  return course.day === INTENSIVE_DAY_LABEL;
+}
+
 function computeFetchStatus(pageTitle: string, courses: Course[]): FetchStatus {
   if (pageTitle.includes('システムエラー') || pageTitle.includes('タイムアウト')) {
     return 'error';
@@ -49,6 +57,7 @@ function computeFetchStatus(pageTitle: string, courses: Course[]): FetchStatus {
 
 export const repoRoot = path.resolve(__dirname, '..', '..');
 export const outputDir = path.join(repoRoot, 'output', 'toyo');
+export const dataDir = path.join(repoRoot, 'data');
 export const spreadsheetDir = path.join(repoRoot, 'output', 'spreadsheet');
 export const jsonOutputPath = path.join(outputDir, 'registration-data.json');
 export const markdownOutputPath = path.join(outputDir, 'registration-summary.md');
@@ -91,13 +100,20 @@ export function buildEnrollmentMarkdown(data: EnrollmentData): string {
   const byDay = summarizeBy<string>(data.courses, 'day');
   const byDeliveryMode = summarizeBy<string>(data.courses, 'deliveryMode');
   const byCampus = summarizeBy<string>(data.courses, 'campus');
+  const semesterOrder = [...new Set(data.courses.map((course) => course.semesterLabel))];
+  const dayOrder = [...WEEKDAYS, INTENSIVE_DAY_LABEL];
   const sortedCourses = [...data.courses].sort((a, b) => {
-    const dayOrder = ['月', '火', '水', '木', '金', '土', '日'];
     return (
+      semesterOrder.indexOf(a.semesterLabel) - semesterOrder.indexOf(b.semesterLabel) ||
       dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day) ||
-      Number(a.period) - Number(b.period) ||
+      Number(a.period || 99) - Number(b.period || 99) ||
       a.courseName.localeCompare(b.courseName, 'ja')
     );
+  });
+  const intensiveCount = data.courses.filter(isIntensiveCourse).length;
+  const semesterNotes = semesterOrder.map((label) => {
+    const items = data.courses.filter((course) => course.semesterLabel === label);
+    return `- ${label}: ${items.length}件 ${toCreditTotal(items)}単位`;
   });
 
   const lines = [
@@ -112,9 +128,11 @@ export function buildEnrollmentMarkdown(data: EnrollmentData): string {
     `- 登録単位数合計: ${creditTotal}単位`,
     '',
     '## 集計',
+    ...semesterNotes,
     ...formatCounts('曜日', byDay),
     ...formatCounts('実施形態', byDeliveryMode),
     ...formatCounts('キャンパス', byCampus),
+    `- 曜日時限なし（集中・オンデマンド）: ${intensiveCount}件`,
     '',
     '## 履修科目一覧',
     '| 曜日 | 時限 | 学期 | 科目名 | 授業コード | ナンバリング | 実施形態 | 担当者 | 教室 | キャンパス | 単位 |',
@@ -126,7 +144,7 @@ export function buildEnrollmentMarkdown(data: EnrollmentData): string {
     '',
     '## メモ',
     '- この出力は学務ポータルの「履修登録確認表照会」をもとに作成しています。',
-    '- 現時点では春学期の登録科目のみが表示されていました。',
+    `- 曜日は ${INTENSIVE_DAY_LABEL} が集中講義・オンデマンド科目（曜日時限なし）を表します。`,
   ];
 
   return `${lines.join('\n')}\n`;
@@ -210,32 +228,56 @@ export async function scrapeEnrollmentData(): Promise<EnrollmentData> {
         break;
       }
 
-      const parts = line.split('\t').map((part) => part.trim()).filter(Boolean);
-      if (parts.length < 10) {
+      // 行はタブ区切り。空欄も位置情報として意味を持つので filter せずに扱う。
+      //   通常行:   曜日 \t 時限 \t 学期 \t (空) \t 授業コード \t ナンバリング \t 科目名 \t 実施形態 \t 担当者 \t 教室 \t キャンパス \t 単位
+      //   集中行:   集中その他 \t (空) \t 授業コード \t ...（時限・学期なし）
+      //   継続行:   (空) \t 授業コード \t ...（同じ曜日/集中ブロックの 2 件目以降）
+      // 授業コード（英数字 10 桁）の位置を基準に前後を読む。
+      const parts = line.split('\t').map((part) => part.trim());
+      const codeIndex = parts.findIndex((part) => /^[0-9A-Z]{10}$/.test(part));
+      if (codeIndex < 0 || parts.length < codeIndex + 8) {
         continue;
       }
-
-      let offset = 0;
-      let day = parts[offset];
-      if (!['月', '火', '水', '木', '金', '土', '日'].includes(day)) {
+      const head = parts.slice(0, codeIndex).filter(Boolean);
+      const first = head[0] ?? '';
+      let day = '';
+      let period = '';
+      let term = '';
+      if (WEEKDAYS.includes(first)) {
+        day = first;
+        currentDay = day;
+        period = head[1] ?? '';
+        term = head[2] ?? '';
+      } else if (first.startsWith('集中')) {
+        day = INTENSIVE_DAY_LABEL;
+        currentDay = day;
+        term = head[1] ?? '';
+      } else if (head.length === 0) {
         day = currentDay;
       } else {
-        offset += 1;
-        currentDay = day;
+        // 曜日を持たない継続行（時限 学期 の 2 つだけ、など）
+        day = currentDay;
+        if (/^[0-9０-９]+$/.test(first)) {
+          period = first;
+          term = head[1] ?? '';
+        } else {
+          term = first;
+        }
+      }
+      if (day === INTENSIVE_DAY_LABEL) {
+        period = '';
       }
 
-      const period = parts[offset] || '';
-      const term = parts[offset + 1] || '';
-      const courseCode = parts[offset + 2] || '';
-      const numbering = parts[offset + 3] || '';
-      const courseName = parts[offset + 4] || '';
-      const deliveryMode = parts[offset + 5] || '';
-      const instructor = parts[offset + 6] || '';
-      const room = parts[offset + 7] || '';
-      const campus = parts[offset + 8] || '';
-      const creditsRaw = parts[offset + 9] || '';
+      const courseCode = parts[codeIndex] || '';
+      const numbering = parts[codeIndex + 1] || '';
+      const courseName = parts[codeIndex + 2] || '';
+      const deliveryMode = parts[codeIndex + 3] || '';
+      const instructor = parts[codeIndex + 4] || '';
+      const room = parts[codeIndex + 5] || '';
+      const campus = parts[codeIndex + 6] || '';
+      const creditsRaw = parts[codeIndex + 7] || '';
 
-      if (!day || !period || !courseCode || !courseName) {
+      if (!day || !courseCode || !courseName) {
         continue;
       }
 

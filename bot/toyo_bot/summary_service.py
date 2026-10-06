@@ -92,9 +92,13 @@ class SummaryService:
             lines.append(f"直近同期: {last_sync}")
         return _truncate("\n".join(lines))
 
-    def format_daily_summary(self, summary: Summary) -> str:
+    def format_daily_summary(
+        self, summary: Summary, *, new_assignment_ids: set[str] | None = None
+    ) -> str:
         lines = ["**定期まとめ**"]
         lines.append(self._format_day("今日", summary.today_classes, summary))
+        lines.append("")
+        lines.append(self._format_assignment_digest(summary, new_assignment_ids or set()))
 
         important = [a for a in summary.announcements if a.category in ("休講", "補講", "教室変更")]
         if important:
@@ -172,6 +176,46 @@ class SummaryService:
 
         return "\n".join(lines)
 
+    def _format_assignment_digest(self, summary: Summary, new_assignment_ids: set[str]) -> str:
+        if not summary.ace_available:
+            return "📋 **未提出課題チェック**\n⚠️ ToyoNet-ACE の課題取得に失敗したため未確認です。"
+
+        assignments = list(summary.upcoming_assignments)
+        if not assignments:
+            return "📋 **未提出課題チェック**\n未提出課題はありません。"
+
+        lines = ["📋 **未提出課題チェック**"]
+
+        new_assignments = [
+            assignment for assignment in assignments
+            if assignment.assignment_id in new_assignment_ids
+        ]
+        if new_assignments:
+            lines.append("")
+            lines.append(f"🆕 新しい課題が {len(new_assignments)} 件あります")
+            for assignment in new_assignments[:5]:
+                lines.append(f"- {self._fmt_assignment(assignment)}")
+            if len(new_assignments) > 5:
+                lines.append(f"…他 {len(new_assignments) - 5} 件")
+
+        due_known = [assignment for assignment in assignments if assignment.due_at is not None]
+        if due_known:
+            lines.append("")
+            lines.append(f"🔥 期限順 上位{min(3, len(due_known))}件")
+            for index, assignment in enumerate(due_known[:3], start=1):
+                lines.append(f"{index}. {self._fmt_assignment(assignment)}")
+
+        deadline_unknown = [assignment for assignment in assignments if assignment.due_at is None]
+        if deadline_unknown:
+            lines.append("")
+            lines.append("🕵️ 締切未確認")
+            for assignment in deadline_unknown[:3]:
+                lines.append(f"- {self._fmt_assignment(assignment)}")
+            if len(deadline_unknown) > 3:
+                lines.append(f"…他 {len(deadline_unknown) - 3} 件")
+
+        return "\n".join(lines)
+
     def _fmt_assignment(self, a: "Assignment") -> str:  # type: ignore[name-defined]
         if a.due_at:
             due = a.due_at.astimezone(self._tz).strftime("%m/%d %H:%M")
@@ -186,4 +230,3 @@ class SummaryService:
             if item.class_info.course_code == course_code:
                 return list(item.related_assignments)
         return []
-

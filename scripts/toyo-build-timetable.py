@@ -132,6 +132,14 @@ def make_workbook(data: dict, output_path: Path) -> None:
             f"{mode} {sum(1 for course in courses if course['deliveryMode'] == mode)}件"
             for mode in sorted({course['deliveryMode'] for course in courses})
         ),
+        "曜日時限なし（集中・オンデマンド）: " + (
+            " / ".join(
+                f"{course['courseName']}（{course['deliveryMode']}）"
+                for course in courses
+                if course["day"] not in DAY_ORDER
+            )
+            or "なし"
+        ),
         "注: 学務ポータルの「履修登録確認表照会」をもとに作成",
     ]
     for offset, line in enumerate(summary_lines, start=1):

@@ -31,7 +31,9 @@ Skillsは `.claude/commands/toyo.md` として定義。LLMが質問を受けた�
 | 授業・教室 | `output/toyo/registration-data.json` | 毎回フェッチ |
 | 課題・締切 | `output/toyo/toyonet-ace-assignments.json` | 毎回フェッチ |
 | ACEお知らせ（休講等） | `output/toyo/announcements.json` | 毎回フェッチ |
-| 学年暦・祝日 | `output/toyo/academic-calendar.json` | 毎回フェッチ |
+| 祝日 | `output/toyo/academic-calendar.json` | 毎回フェッチ |
+| 学年暦（履修登録・抽選・追加登録・取消申請の期間、授業開始日） | `data/academic-schedule.json` | 手書きの静的データ（しおり由来。年度が変わったら書き直す。履修登録関連の期間のみ。学年暦の詳細はユーザーの Google カレンダーが正） |
+| 成績配分・足切り | `data/grading-rules.json` | `toyo:grading-rules` で下書き → 人が確認（`reviewed`）。`data/` は手書き・レビュー済みの静的データ（git 管理）、`output/` は生成物 |
 | シラバス | `output/toyo/syllabus/<授業コード>.json` | 学期内キャッシュ |
 | 集約サマリー | `output/bot/summary.json` | `toyo:sync` で生成 |
 
@@ -46,6 +48,13 @@ npm run toyo:export-enrollment
 npm run toyo:syllabus -- --course-code <授業コード>
 npm run toyo:calendar      # 祝日・学年暦のみ更新
 npm run toyo:announcements # ACEお知らせのみ更新
+npm run toyo:context       # エージェント用の圧縮コンテキストを生成
+npm run toyo:candidates    # 履修登録画面から登録可能科目を取得（--syllabus でシラバスも）
+npm run toyo:credits       # 単位数集計表・履修修得科目を取得
+npm run toyo:register      # 履修登録の dry-run / --exec で送信（--period add --max-credits N --skip-missing）
+npm run toyo:lottery       # 抽選実施科目一覧と当落を取得
+npm run toyo:schedule      # 学年暦から今日の進行中の期間・第N回授業日を表示（--date YYYY-MM-DD）
+npm run toyo:grading-rules # シラバスから成績配分・足切りの下書きを生成（reviewed:true は上書きしない）
 ```
 
 使い分け:
@@ -58,11 +67,46 @@ npm run toyo:announcements # ACEお知らせのみ更新
 - `toyo:syllabus`: 履修登録確認表の科目を指定して、シラバスを単体取得する（学期内キャッシュあり）。
 - `toyo:calendar`: 内閣府CSVから祝日データを取得する。
 - `toyo:announcements`: ToyoNet-ACEのお知らせ（休講・補講・教室変更等）を取得する。
+- `toyo:context`: `summary.json` が古い場合は `toyo:sync` を試み、今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。既存出力だけで作る場合は `--no-sync` を付ける。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
+- `toyo:schedule`: `academic-schedule.json` を読むだけ。`--date 2026-10-07` で任意の日の進行中の期間と各曜日の第N回を確認できる。祝日（`academic-calendar.json`）と `noClassDays` は授業日から除き、`makeupDays` は振替曜日として数える。
+- `toyo:grading-rules`: シラバス本文から正規表現で配分・足切りを抽出する下書き生成。抽出結果は必ず `sourceText` と見比べて直し `reviewed: true` にする。配分合計が 100 にならない科目は `warnings` に入る。
+
+## 履修登録画面の制約（2026-09 に判明）
+
+- 履修登録（正規登録期間）は `/univision/action/in/f07/Usin070311`。各コマの科目一覧（`Usin071640`）とシラバス（`Uscm030170`）は、画面のボタンから開くサブウィンドウでしか表示されない。URL を直接開くと「不正な操作」になる。`scripts/toyo-fetch-registration-candidates.ts` はボタンをクリックしてサブウィンドウを捕捉する。
+- 科目一覧のシラバスボタンは前のサブウィンドウを閉じてから開くので、毎回 `context.waitForEvent('page')` で新しいページを待つ。シラバスを 200 件前後連続で開くと「認証エラー」になり以降のコマが 0 件になるため、認証エラーを検知したら登録画面を開き直す。
+- 英語開講科目は「日本語」ボタンがなく「English」だけ。シラバス取得は English にフォールバックする。
+- 登録の送信は `onExecButtomClick()` → `confirm()` → Ajax POST（`Usin070321`）。応答ヘッダ `x-json` が `{"status":"success"}` なら成功、`error` なら画面にエラー（E）・警告（W）が出て何も登録されない。履修上限（秋学期 24 単位）超過はここで判定される。事前チェックの API はない。
+- 追加登録（`Usin071611`）・抽選科目一覧（`Usin07Z211`）は期間外だと「この機能は使用可能対象外です」。
+- 履修登録確認表の「集中その他」科目は曜日・時限がなく、`registration-data.json` では `day: "集中"`, `period: ""` になる。今日/明日の授業一覧には出ない。
+- `tsx` は esbuild の keepNames により `page.evaluate` に渡した関数内の関数定義へ `__name()` を注入し、ブラウザ側で `ReferenceError: __name is not defined` になる。ブラウザ側コードは文字列（`String.raw`）で渡す。
+
+## 抽選実施科目
+
+- 履修登録の送信が成功しても、定員超過の科目（他キャンパス開講の全学科目など。2026 秋は赤羽台のオンデマンド 4 科目）は抽選になり、登録は確定ではない。
+- 落選した科目は履修登録と ToyoNet-ACE のコースから削除される。抽選実施科目は追加登録期間に追加できない。
+- 当落は `npm run toyo:lottery`（抽選実施科目一覧 `Usin07Z211`）で確認する。結果は `output/toyo/lottery-results.json` / `.md`（○ 当選、× 落選）。画面が開けないときは既存ファイルを上書きせず、非 0 で終了する。
+- 2026 年度（秋学期）の日程: 抽選発表 10/5、抽選結果 10/6 17:00、追加登録 10/7(水) 12:20〜10/9(金) 23:59、履修取消 10/23〜10/29。
+- 出典: ACE コース course_4999517 の「2026年度経営学部履修登録のしおり.pdf」。
+- 2026-09-29 に 12 科目を登録し、4 科目（生命と倫理・情報化社会と人間・ジェンダー論・総合Ｅ）が落選して 8 科目 16 単位になった。
+
+## 追加登録期間の手順
+
+追加登録は先着順で、開講されている科目も限られる。履修上限（秋学期 24 単位）に対して現在の登録単位数との差分だけ入る。優先順の plan は `output/toyo/add-registration-plan.json`（`[{"scheduleCd", "name", "note"}]`、並び順 = 優先順）。
+
+1. 12:20 になったら `npm run toyo:candidates -- --add` で、追加登録画面で今開いている科目を取得する。期間前は「使用可能対象外」と表示されて非 0 終了し、既存の `registration-candidates.json` は更新されない。
+2. `npm run toyo:register -- --file output/toyo/add-registration-plan.json --period add --max-credits 24 --skip-missing` を dry-run で実行し、追加される科目・飛ばされる科目・送信後の単位数を確認する。`--skip-missing` は候補に無い科目、`--max-credits` は上限を超える科目を飛ばす。
+3. 差分をユーザーが確認して OK を出したら、同じコマンドに `--exec` を付けて送信する。エラー（E）があれば何も登録されないので、そのまま提示して plan を見直す。
+4. `npm run toyo:export-enrollment` で履修登録確認表を更新し、`npm run toyo:lottery` で抽選科目が混ざっていないか確認する。
+
+注意: 追加登録画面の候補は `registration-candidates.json` の `period` が `add` のものを使う。`regular` のまま実行すると警告が出る。
 
 ## 同期後に確認するファイル
 
 - `output/bot/summary.json`
   LLM や Discord bot が読む集約結果。`sourceStatus` でポータル・ACEの取得状況を確認。
+- `output/toyo/agent-context.json` / `output/toyo/agent-context.md`
+  コーディングエージェントが最初に読む圧縮コンテキスト。`freshness`、`warnings`、今日/明日の授業、近い課題、重要なお知らせ、参照すべき source file を含む。
 - `output/toyo/registration-data.json`
   履修登録確認表の構造化データ。`fetchStatus` フィールドで取得成否を確認（`success` / `error` / `empty`）。
 - `output/toyo/registration-summary.md`
@@ -71,6 +115,10 @@ npm run toyo:announcements # ACEお知らせのみ更新
   ToyoNet-ACEのお知らせ（休講・補講・教室変更）。`category` フィールドで分類済み。
 - `output/toyo/academic-calendar.json`
   祝日データ。`nationalHolidays` 配列で `YYYY-MM-DD` 形式。
+- `data/academic-schedule.json`
+  しおり由来の学年暦（手書き）。`periods`（登録・抽選・追加登録・取消申請など）と `terms`（通常授業開始日・休講日・振替日）。しおりに無い項目は null で、`unknown` に理由つきで列挙してある。推測で埋めない。学年暦の詳細はユーザーの Google カレンダーが正で、ここには履修登録関連の期間のみ置く。
+- `data/grading-rules.json`
+  科目別の成績配分と足切り。`reviewed: false` や `warnings` が残るものは原文（`sourceText`）を引用して不確実性を伝える。
 - `output/toyo/syllabus/*.json`
   単体取得したシラバスの構造化データ（学期内キャッシュとして機能）。
 - `output/toyo/syllabus/*.md`
@@ -141,18 +189,19 @@ npm run toyo:login
 
 授業や課題の最新情報を聞かれたとき:
 
-1. `npm run toyo:sync` を実行する。
-2. `output/bot/summary.json` を読む。
-3. `sourceStatus` と `errors` を確認する。
-4. `registration-data.json` の `fetchStatus` を確認する。
+1. `npm run toyo:context` を実行する。
+2. `output/toyo/agent-context.md` または `output/toyo/agent-context.json` を読む。
+3. `freshness.stale`、`warnings`、`sourceStatus` を確認する。
+4. 詳細が必要なら `output/bot/summary.json` と source file に戻る。
+5. `registration-data.json` の `fetchStatus` を確認する。
    - `"error"` → ログイン喪失扱い。授業データを信用しないと断った上で回答する。
    - `"empty"` → 「履修データが空です。`npm run toyo:login` 後に再同期してください」と伝える。
    - `"success"` → 通常通り回答する。
-5. 履修、シラバス、ToyoNet-ACE の入口では自動回復後に再試行される。
-6. まだ失敗する場合は `npm run toyo:login` が必要だと明示する。
-7. 取得失敗 (`"error"`) と授業なし (`"empty"`) を混同せずに回答する。
-8. `announcements.json` の `category: "休講"` / `"補講"` / `"教室変更"` を必ずチェックして回答に反映する。
-9. `academic-calendar.json` の `nationalHolidays` で祝日チェックをする。祝日なら「授業なし（祝日）」と答える。
+6. 履修、シラバス、ToyoNet-ACE の入口では自動回復後に再試行される。
+7. まだ失敗する場合は `npm run toyo:login` が必要だと明示する。
+8. 取得失敗 (`"error"`) と授業なし (`"empty"`) を混同せずに回答する。
+9. `announcements.json` の `category: "休講"` / `"補講"` / `"教室変更"` を必ずチェックして回答に反映する。
+10. `academic-calendar.json` の `nationalHolidays` で祝日チェックをする。祝日なら「授業なし（祝日）」と答える。
 
 ## シラバス単体取得
 
@@ -240,6 +289,28 @@ await recoverToyoSessionIfNeeded(page, {
   snapshotTag: 'target-session-loss',
 });
 ```
+
+## 運用上の落とし穴
+
+過去の実作業で踏んだもの。原因と回避を対で持つ。
+
+- 症状: `npm run toyo:sync` や ad-hoc の `tsx -e` が `listen EPERM` / crashpad で落ちる。
+  - 原因: この環境の ad-hoc runner 制約。
+  - 回避: ad-hoc Playwright を書かず repo の既存 script に寄せる。runner 制約であることを明示して切り分ける。
+
+- 症状: 同期後に `summary.json` が前より内容が薄くなった。
+  - 原因: partial refresh が同じ出力先を上書きした。
+  - 回避: 再同期前に `registration-summary.md` / assignments / contents を読んでおく。fresh run が壊れたら stale と partial を明示して使い分ける。
+
+- 症状: シラバス detail が `利用できません` になる。
+  - 原因: detail URL に direct `goto` した。
+  - 回避: `npm run toyo:syllabus` を使う。UI をたどる必要がある場合は popup 連鎖 `Usin026411` → `Usin026420` → `日本語` → `Uscm030170` を前提にする。
+
+- 症状: 科目名で見つけた評価基準が別授業のものだった。
+  - 原因: `toyonet-ace-contents.json` や `output/toyo/syllabus/*.md` の別科目キャッシュを科目名一致で拾った。
+  - 回避: `docs/basic-info.md` と `registration-data.json` で授業コードを確定してから `npm run toyo:syllabus -- --course-code <code>` で取り直す。科目名 grep から始めない。
+
+- JSON 集計に `jq` を前提にしない。この環境では `node -e` で済ませる。
 
 ## Skill 化するときの境界
 
