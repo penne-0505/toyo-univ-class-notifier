@@ -101,6 +101,25 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 注意: 追加登録画面の候補は `registration-candidates.json` の `period` が `add` のものを使う。`regular` のまま実行すると警告が出る。
 
+## データ配信（toyo-data）
+
+取得データは private repo `penne-0505/toyo-data`（ローカル clone: `~/toyo-data`）へ定期 push する。systemd ユーザータイマーで動き、Discord bot には依存しない（bot は `output/` を読むだけ）。
+
+```
+toyo-watch.timer (5分)  → toyo:watch ─ 変化あり → summary 再生成 → toyo:context --no-sync ─┐
+toyo-daily.timer (04:30) → toyo:daily (sync/credits/lottery/context) ─────────────────────┤
+                                                                                          ▼
+                                       toyo:publish → ~/toyo-data → GitHub (private)
+Discord bot ← output/ を読むだけ（上記と独立）
+```
+
+- 公開対象は allowlist（`output/toyo/**`、`output/bot/summary.json`、`data/**`）のみ。`artifacts/`・`playwright/`・`.env*` はコード上含まれない。`registration-candidates.json`（約 1.6MB）は `--include-candidates`（daily）のときだけ。
+- 差分判定は `fetchedAt` / `generatedAt` / `builtAt` などの時刻を除いたハッシュ。時刻だけ変わったファイルは書き換えず、commit にも含めない。`meta.json` だけが変わる場合も commit しない（daily は `--force` で毎日 1 commit 作り、生存確認を兼ねる）。
+- watch は `state/watch-state.json` に連続失敗数と次回許可時刻を持つ。失敗 2 回で 15 分、4 回で 30 分スキップし、成功で解除。ログイン切れ時は `toyo:login` 後に `rm state/watch-state.json`。
+- watch と daily は `flock /tmp/toyo-fetch.lock` で排他。導入・確認・停止は `deploy/README.md`。
+- 注意: watch が「変化なし」の間は summary.json の `generatedAt` が古いままになる。`toyo:context` の既定 30 分 stale 判定を使う場合は `--no-sync` を付けても警告が出うる。鮮度は `fetchedAt` の新しさではなく、watch の最終確認時刻（`state/watch-state.json` の `lastSuccessAt`）で見ること。
+- 注意: `registration-data.json` には学籍番号・氏名が含まれ、そのまま push される（private repo 前提）。
+
 ## 同期後に確認するファイル
 
 - `output/bot/summary.json`

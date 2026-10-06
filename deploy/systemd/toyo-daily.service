@@ -1,0 +1,11 @@
+[Unit]
+Description=Toyo daily full fetch -> toyo-data publish
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/penne/dev/scratch/toyo-univ-analyze
+Environment=PATH=/home/penne/.volta/bin:/usr/bin:/bin
+# watch が実行中ならロック解放を最大 15 分待つ（04:30 は watch の起動時刻と重なるため -n にしない）
+ExecStart=/usr/bin/flock -w 900 /tmp/toyo-fetch.lock /usr/bin/env npm run toyo:daily
+# 全取得は 600 秒を超えうるため watch より長く取る
+TimeoutStartSec=1800

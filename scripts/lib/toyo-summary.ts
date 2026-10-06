@@ -10,7 +10,9 @@ import {
   collectToyoNetAceAssignments,
   collectToyoNetAceContents,
   type Assignment,
+  type AssignmentCollectionResult,
   type CourseContent,
+  type CourseContentCollectionResult,
 } from './toyonet-ace';
 import { fetchSyllabusWithCache, type SyllabusRecord } from './toyo-syllabus';
 import { sessionNumberFor } from './toyo-academic-schedule';
@@ -409,7 +411,17 @@ async function buildDetailedClassesForOffset(
   };
 }
 
-export async function buildDiscordSummary(enrollment: EnrollmentData): Promise<DiscordSummary> {
+/** 取得済みの ACE 結果を渡すと、ポータルへ再アクセスせずに summary を組み立てる（toyo:watch 用）。 */
+export type PrefetchedAceResults = {
+  assignments: AssignmentCollectionResult;
+  contents: CourseContentCollectionResult;
+  announcements: AnnouncementCollectionResult;
+};
+
+export async function buildDiscordSummary(
+  enrollment: EnrollmentData,
+  prefetched?: PrefetchedAceResults
+): Promise<DiscordSummary> {
   const now = new Date();
   const courseNames = enrollment.courses.map((course) => course.courseName);
 
@@ -418,11 +430,13 @@ export async function buildDiscordSummary(enrollment: EnrollmentData): Promise<D
     .filter((course): course is DiscordCourseSummary => course !== null)
     .sort((a, b) => a.startsAtEpochMs - b.startsAtEpochMs)[0] ?? null;
 
-  const [assignmentResult, contentResult, announcementResult] = await Promise.all([
-    collectToyoNetAceAssignments(),
-    collectToyoNetAceContents(courseNames),
-    collectToyoNetAceAnnouncements(courseNames),
-  ]);
+  const [assignmentResult, contentResult, announcementResult] = prefetched
+    ? [prefetched.assignments, prefetched.contents, prefetched.announcements]
+    : await Promise.all([
+        collectToyoNetAceAssignments(),
+        collectToyoNetAceContents(courseNames),
+        collectToyoNetAceAnnouncements(courseNames),
+      ]);
 
   const nextClassNotes = await buildNextClassNotes(nextClass, enrollment);
   const sortedAssignments = sortAssignments(assignmentResult.assignments);

@@ -20,7 +20,10 @@
     "toyo:credits": "tsx ./scripts/toyo-fetch-credits.ts",
     "toyo:lottery": "tsx ./scripts/toyo-fetch-lottery.ts",
     "toyo:schedule": "tsx ./scripts/toyo-academic-schedule.ts",
-    "toyo:grading-rules": "tsx ./scripts/toyo-grading-rules.ts"
+    "toyo:grading-rules": "tsx ./scripts/toyo-grading-rules.ts",
+    "toyo:publish": "tsx ./scripts/toyo-publish.ts",
+    "toyo:watch": "tsx ./scripts/toyo-watch.ts",
+    "toyo:daily": "tsx ./scripts/toyo-daily.ts"
   },
   "keywords": [],
   "author": "",

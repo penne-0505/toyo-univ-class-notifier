@@ -1,0 +1,11 @@
+[Unit]
+Description=Toyo ACE watch (assignments/announcements diff -> toyo-data publish)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/penne/dev/scratch/toyo-univ-analyze
+Environment=PATH=/home/penne/.volta/bin:/usr/bin:/bin
+# daily / 他の watch が実行中なら何もせず終了（終了コード 75 は正常扱い）
+ExecStart=/usr/bin/flock -n -E 75 /tmp/toyo-fetch.lock /usr/bin/env npm run toyo:watch
+SuccessExitStatus=75
+TimeoutStartSec=600

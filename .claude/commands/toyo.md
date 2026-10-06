@@ -80,6 +80,12 @@
 4. 成功したら `toyo:export-enrollment` で確認表を再取得し、集中科目（`day: "集中"`）も含めて登録内容を照合する
 5. 送信後は抽選実施科目一覧（`toyo:lottery`）で当落を確認し、結果発表日と追加登録期間をユーザーに伝える（登録成功は確定ではない。詳細は runbook の「抽選実施科目」「追加登録期間の手順」）
 
+## クラウド側（toyo-data）での鮮度判断
+
+- 取得データは private repo `toyo-data` へ定期 push される（watch 5 分 / daily 04:30 JST。仕組みは `docs/toyo-automation-runbook.md` の「データ配信」）
+- クラウド側は `toyo-data` の `meta.json` の `publishedAt` と `sourceStatus` で鮮度を判断する（各ファイルの本体取得時刻は `meta.json` の `files.<path>.fetchedAt`）
+- `publishedAt` が 24 時間より古い、または `sourceStatus` の `available` が false / `fetchStatus` が `error` のときは、データが古い可能性を断ってから回答する
+
 ## 判断の権限
 
 - 「行くべきか？」「休んでも大丈夫か？」に対して積極的に判断してよい

@@ -50,6 +50,9 @@ cd bot && uv sync && uv run toyo-discord-bot
 | `npm run toyo:schedule [-- --date YYYY-MM-DD]` | `data/academic-schedule.json`（しおりから手で起こした学年暦）を読み、指定日（既定: 今日 JST）に進行中・直近の期間と、各曜日の第N回授業日を表示（ポータル不要） |
 | `npm run toyo:grading-rules` | シラバスの「成績評価の方法・基準」から配分・足切りを抽出して `grading-rules.json` に下書きを書く（`reviewed: true` の科目は上書きしない。ポータル不要） |
 | `npm run toyo:register -- --file plan.json [--exec]` | 履修登録画面に科目を入れて送信。既定は dry-run、`--exec` で実際に登録 |
+| `npm run toyo:publish [-- --dry-run --include-candidates --force]` | allowlist（`output/toyo/**`・`output/bot/summary.json`・`data/**`）を `~/toyo-data` へ同期し、時刻以外に差分があるときだけ commit & push。`meta.json` に鮮度・`sourceStatus` を書く |
+| `npm run toyo:watch` | ACE の未提出課題とお知らせだけ取得し、変化があれば summary / agent-context を再生成して publish（5 分タイマー用。失敗が続くと 15→30 分に自動バックオフ） |
+| `npm run toyo:daily` | 全取得（sync → credits → lottery → context）→ `toyo:publish --include-candidates --force`（24 時間タイマー用） |
 | `npm run typecheck` | TypeScript型チェック |
 
 ## 出力ファイル
