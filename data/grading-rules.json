@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-06T18:23:03.398Z",
+  "generatedAt": "2026-10-07T19:02:11.131Z",
   "notes": [
     "reviewed: true の科目は人が sourceText と突き合わせて修正済み。npm run toyo:grading-rules を再実行しても上書きされない。",
     "weightPercent: %換算の配点。原文が点数表記（100点満点）の科目は同値として%で記録。配分が書かれていないものは null。",
@@ -197,6 +197,78 @@
       ]
     },
     {
+      "courseCode": "2310126001",
+      "scheduleCd": "3423101260-001",
+      "courseName": "組織行動論",
+      "semester": "秋学期",
+      "enrollment": "registered",
+      "components": [
+        {
+          "name": "授業態度（ランダムに実施する Web コメント入力）",
+          "weightPercent": 20,
+          "kind": "participation",
+          "perSession": false,
+          "scenario": null,
+          "note": "毎回ではなくランダムに実施。実施日に欠席していると、理由を問わず事後対応なし"
+        },
+        {
+          "name": "期末試験",
+          "weightPercent": 80,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": null,
+          "note": "状況によりオンライン試験またはレポートに変更の可能性あり"
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "other",
+          "text": "コメントシート配布時に欠席していた場合、いかなる理由でも事後対応しない（その回の授業態度点は失う）",
+          "threshold": null,
+          "unit": null
+        }
+      ],
+      "retake": null,
+      "sourceText": "1. 授業態度20%（毎回ではなく，ランダムに実施するGoogle form等webへのコメント入力）2. 期末試験80%（状況により、オンライン試験やレポートになる可能性あり）※いかなる理由であっても，コメントシート配布時に講義に出席していなかった学生に事後対応することはないので注意すること。評価割合を変更する場合には事前に通知します。3. 成績は東洋大学の成績評価基準に準拠する。",
+      "reviewed": true,
+      "warnings": [
+        "授業態度の配点がどの回に付くか事前に分からない。欠席するとその回の点を確実に失うが、何回分あるかは不明",
+        "指導方法に「周囲の人と話し合い」「グループ討議を行う可能性」の記載あり（評価対象ではない）"
+      ]
+    },
+    {
+      "courseCode": "2310155001",
+      "scheduleCd": "3423101550-001",
+      "courseName": "金融システム論１",
+      "semester": "秋学期",
+      "enrollment": "registered",
+      "components": [
+        {
+          "name": "小テスト（manaba のドリル、ほぼ毎週）",
+          "weightPercent": 10,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": "各回 10 題前後、正答率に応じて満点 10 点に換算。出席だけでは得点にならない"
+        },
+        {
+          "name": "期末試験（4 択 約 80 問）",
+          "weightPercent": 90,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": null,
+          "note": "各回から 5〜10 問、知識問題と計算問題。予想問題のヒントは最終授業で配布"
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "小テストの点(10点満点)と期末試験(90点満点)の合計に基づき、大学標準の評価方法により成績をつけます（90点以上をS、80以上90点未満をAなど）。",
+      "reviewed": true,
+      "warnings": [
+        "出席要件の記載なし（大学標準の 3 分の 2 出席が適用されるかは不明）"
+      ]
+    },
+    {
       "courseCode": "2310013001",
       "scheduleCd": "3423100130-001",
       "courseName": "経営学１",
@@ -310,6 +382,75 @@
       ]
     },
     {
+      "courseCode": "2040032002",
+      "scheduleCd": "3420400320-002",
+      "courseName": "政治学Ｂ２",
+      "semester": "秋学期",
+      "enrollment": "registered",
+      "components": [
+        {
+          "name": "小テスト（5%配点の回）",
+          "weightPercent": 40,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": "5%×8回"
+        },
+        {
+          "name": "小テスト（10%配点の回）",
+          "weightPercent": 60,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": "10%×6回"
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "＜成績評価の方法＞小テスト100％（5%×8回、10％×6回）で評価する。＜成績評価の基準＞東洋大学の成績評価基準に準拠する",
+      "reviewed": true,
+      "warnings": [
+        "小テスト計14回で100%。どの回が5%/10%かは原文に記載なし。試験・レポートの配点なし。1回欠くと5〜10%を失う。"
+      ]
+    },
+    {
+      "courseCode": "2050108004",
+      "scheduleCd": "3420501080-004",
+      "courseName": "心理学Ｂ4",
+      "semester": "秋学期",
+      "enrollment": "registered",
+      "components": [
+        {
+          "name": "授業参加度（毎回の小課題）",
+          "weightPercent": 40,
+          "kind": "participation",
+          "perSession": true,
+          "scenario": null,
+          "note": "出席は毎回の小課題の提出状況で判断"
+        },
+        {
+          "name": "学期末レポート課題",
+          "weightPercent": 60,
+          "kind": "report",
+          "perSession": false,
+          "scenario": null,
+          "note": ""
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "attendance",
+          "text": "出席回数（毎回の小課題の提出）が3分の2以上（全15回中10回以上）でないと成績評価対象外",
+          "threshold": 10,
+          "unit": "count"
+        }
+      ],
+      "retake": null,
+      "sourceText": "１．本講義で取り上げた現象や理論、研究方法について理解し、適切に説明することができるかどうか、また、日常生活における様々な事柄について本講義で学習した内容から捉え、説明することができるかどうかを「授業参加度（毎回の小課題）」(40%)と「学期末レポート課題」(60%)に基づいて成績評価を行います。授業への出席は、毎回の小課題の提出状況により判断します。出席回数（毎回の小課題の提出）を3分の2以上（全15回中10回以上）を満たしていない場合は、成績評価対象外となります。２．上記到達目標の達成度を鑑み、「東洋大学成績評価基準」に従って評価します。",
+      "reviewed": true,
+      "warnings": []
+    },
+    {
       "courseCode": "XJ13900003",
       "scheduleCd": "34XJ128700-002",
       "courseName": "AI基礎【オンデマンド】",
@@ -346,329 +487,6 @@
       "reviewed": true,
       "warnings": [
         "オンデマンド科目での「欠席」の判定方法（視聴記録など）は記載なし。"
-      ]
-    },
-    {
-      "courseCode": "2020002001",
-      "scheduleCd": "3420200020-001",
-      "courseName": "経済学Ｂ",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "毎回の課題提出",
-          "weightPercent": 30,
-          "kind": "assignment",
-          "perSession": true,
-          "scenario": null,
-          "note": ""
-        },
-        {
-          "name": "学期末テスト",
-          "weightPercent": 70,
-          "kind": "final-exam",
-          "perSession": false,
-          "scenario": null,
-          "note": ""
-        }
-      ],
-      "cutoffs": [],
-      "retake": null,
-      "sourceText": "成績評価方法： 以下の2点から総合的に評価する： ・毎回の課題提出（30％） ・学期末テスト（70％） 成績評価基準：成績は東洋大学の成績評価基準に準拠する。 毎回の課題に関する学修到達目標については、以下の観点から評価する： （80～100点）授業内容を発展させて自らの意見を論理的に述べることができる。 （60～79点）授業で学んだ考え方に自らの意見を交えて述べることができる。 （30～59点）授業で学んだ考え方を矛盾なくまとめることができる。 （1～29点）授業で学んだ考え方を部分的に述べることができる。",
-      "reviewed": true,
-      "warnings": []
-    },
-    {
-      "courseCode": "2040032002",
-      "scheduleCd": "3420400320-002",
-      "courseName": "政治学Ｂ２",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "小テスト（5%配点の回）",
-          "weightPercent": 40,
-          "kind": "quiz",
-          "perSession": true,
-          "scenario": null,
-          "note": "5%×8回"
-        },
-        {
-          "name": "小テスト（10%配点の回）",
-          "weightPercent": 60,
-          "kind": "quiz",
-          "perSession": true,
-          "scenario": null,
-          "note": "10%×6回"
-        }
-      ],
-      "cutoffs": [],
-      "retake": null,
-      "sourceText": "＜成績評価の方法＞小テスト100％（5%×8回、10％×6回）で評価する。＜成績評価の基準＞東洋大学の成績評価基準に準拠する",
-      "reviewed": true,
-      "warnings": [
-        "小テスト計14回で100%。どの回が5%/10%かは原文に記載なし。試験・レポートの配点なし。1回欠くと5〜10%を失う。"
-      ]
-    },
-    {
-      "courseCode": "2050108004",
-      "scheduleCd": "3420501080-004",
-      "courseName": "心理学Ｂ4",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "授業参加度（毎回の小課題）",
-          "weightPercent": 40,
-          "kind": "participation",
-          "perSession": true,
-          "scenario": null,
-          "note": "出席は毎回の小課題の提出状況で判断"
-        },
-        {
-          "name": "学期末レポート課題",
-          "weightPercent": 60,
-          "kind": "report",
-          "perSession": false,
-          "scenario": null,
-          "note": ""
-        }
-      ],
-      "cutoffs": [
-        {
-          "type": "attendance",
-          "text": "出席回数（毎回の小課題の提出）が3分の2以上（全15回中10回以上）でないと成績評価対象外",
-          "threshold": 10,
-          "unit": "count"
-        }
-      ],
-      "retake": null,
-      "sourceText": "１．本講義で取り上げた現象や理論、研究方法について理解し、適切に説明することができるかどうか、また、日常生活における様々な事柄について本講義で学習した内容から捉え、説明することができるかどうかを「授業参加度（毎回の小課題）」(40%)と「学期末レポート課題」(60%)に基づいて成績評価を行います。授業への出席は、毎回の小課題の提出状況により判断します。出席回数（毎回の小課題の提出）を3分の2以上（全15回中10回以上）を満たしていない場合は、成績評価対象外となります。２．上記到達目標の達成度を鑑み、「東洋大学成績評価基準」に従って評価します。",
-      "reviewed": true,
-      "warnings": []
-    },
-    {
-      "courseCode": "2050107002",
-      "scheduleCd": "3420501070-002",
-      "courseName": "心理学Ａ2",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "毎回の小テスト",
-          "weightPercent": 80,
-          "kind": "quiz",
-          "perSession": true,
-          "scenario": null,
-          "note": ""
-        },
-        {
-          "name": "予習課題",
-          "weightPercent": 20,
-          "kind": "assignment",
-          "perSession": false,
-          "scenario": null,
-          "note": "段階評価（20点: 根拠つきで考えを表明 / 16-19 / 12-15 / 1-10 点: 考えが表明されていない）。回数は記載なし"
-        }
-      ],
-      "cutoffs": [],
-      "retake": null,
-      "sourceText": "毎回の小テストの成績，および，予習課題の内容を踏まえて成績を評価します。小テストが80％，予習課題が20％です。予習課題については，以下の通り評価します。(20 点)自分の考えが根拠を含めてきちんと表明できている。(16-19 点)根拠等に一部不足はあるが，自分の考えがきちんと表明できている。 (12-15 点)根拠等が不足しているが，自分の考えが一定程度表明できている。(1-10 点)自分の考えが表明されていない。",
-      "reviewed": true,
-      "warnings": [
-        "予習課題の20/16-19/12-15/1-10点が1回分の採点基準か、20%全体への換算かは原文から不明。",
-        "出席・提出回数の足切り記載なし。"
-      ]
-    },
-    {
-      "courseCode": "10E0101001",
-      "scheduleCd": "3410E01010-001",
-      "courseName": "地域と生活",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "各講義の履修確認（Respon出席確認＋付帯記述・選択クイズ）",
-          "weightPercent": 70,
-          "kind": "attendance",
-          "perSession": true,
-          "scenario": null,
-          "note": "出席確認とクイズを兼ねる"
-        },
-        {
-          "name": "レポート",
-          "weightPercent": 30,
-          "kind": "report",
-          "perSession": false,
-          "scenario": null,
-          "note": ""
-        }
-      ],
-      "cutoffs": [],
-      "retake": null,
-      "sourceText": "１．各講義の履修確認（レスポンによる出席確認＋付帯記述・選択クイズ）（70％）およびレポートの評価（30％） ２．本学の成績評価基準に従って成績をつけます。",
-      "reviewed": true,
-      "warnings": [
-        "履修確認が出席とクイズを兼ねるため、1回あたりの配点・欠席時の扱いは不明。"
-      ]
-    },
-    {
-      "courseCode": "2010165001",
-      "scheduleCd": "3420101650-001",
-      "courseName": "生きものの世界Ｂ１",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "講義後の小テスト",
-          "weightPercent": 70,
-          "kind": "quiz",
-          "perSession": true,
-          "scenario": null,
-          "note": ""
-        },
-        {
-          "name": "期末試験",
-          "weightPercent": 30,
-          "kind": "final-exam",
-          "perSession": false,
-          "scenario": null,
-          "note": ""
-        }
-      ],
-      "cutoffs": [
-        {
-          "type": "submission-count",
-          "text": "小テストの提出回数が10回未満の場合は評価対象外",
-          "threshold": 10,
-          "unit": "count"
-        }
-      ],
-      "retake": null,
-      "sourceText": "成績評価は「東洋大学の成績評価基準」に準拠して行う。講義後の小テストの点数（70%）と、期末試験（30%）の合計で、総合判断する。なお、小テストの提出回数が10回未満の場合は、評価対象外となるので注意すること。",
-      "reviewed": true,
-      "warnings": [
-        "「10回未満」は10回提出で足りると読める（10回以上提出が条件）。全体の小テスト回数は記載なし。"
-      ]
-    },
-    {
-      "courseCode": "2010127002",
-      "scheduleCd": "3420101270-002",
-      "courseName": "環境の科学Ｂ２",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "各回の授業で行う小テスト",
-          "weightPercent": 100,
-          "kind": "quiz",
-          "perSession": true,
-          "scenario": null,
-          "note": "配分の数値記載はないが、小テストのみで評価すると読める"
-        }
-      ],
-      "cutoffs": [
-        {
-          "type": "attendance",
-          "text": "出席は ToyoNet-ACE に記録された視聴状況・回答状況で判断（基準回数の記載なし）",
-          "threshold": null,
-          "unit": null
-        }
-      ],
-      "retake": null,
-      "sourceText": "1.各回の授業で行う小テストで成績評価を行います。2.授業への出席はToyoNet-Aceに記録された視聴状況や回答状況によって判断します。",
-      "reviewed": true,
-      "warnings": [
-        "配分の数値記載なし。「小テストで成績評価を行います」から100%と解釈した（要確認）。",
-        "出席の基準回数は記載なし。"
-      ]
-    },
-    {
-      "courseCode": "1020010002",
-      "scheduleCd": "3410200100-002",
-      "courseName": "公務員論入門２",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "出席登録",
-          "weightPercent": 25,
-          "kind": "attendance",
-          "perSession": true,
-          "scenario": null,
-          "note": "第1回〜第13回、振り返り"
-        },
-        {
-          "name": "授業の場で課されるコメント等",
-          "weightPercent": 40,
-          "kind": "assignment",
-          "perSession": false,
-          "scenario": null,
-          "note": "第1・2・4・5・7・8・9回（7回）。公務員制度への問題意識と自分の考えを示せるか"
-        },
-        {
-          "name": "確認テスト",
-          "weightPercent": 20,
-          "kind": "quiz",
-          "perSession": false,
-          "scenario": null,
-          "note": "第3・6・10回（3回）"
-        },
-        {
-          "name": "公務員試験に関する情報整理ノート",
-          "weightPercent": 15,
-          "kind": "assignment",
-          "perSession": false,
-          "scenario": "ノート選択",
-          "note": "発展レポートとどちらか選択"
-        },
-        {
-          "name": "公務員に関する発展レポート",
-          "weightPercent": 15,
-          "kind": "report",
-          "perSession": false,
-          "scenario": "レポート選択",
-          "note": "情報整理ノートとどちらか選択"
-        }
-      ],
-      "cutoffs": [],
-      "retake": null,
-      "sourceText": "成績評価は「東洋大学成績評価基準」に準拠し、詳細は以下のとおりとします。１ 出席登録 25点（第1回～第13回、振り返り）２ 授業の場で課されるコメント等の内容 40点（第1・2・4・5・7・8・9回）※テーマについての意見や公務員試験対策の一環として公務員の制度と現実への問題意識を持ち、自らの考えを示せるかどうかを評価します。３ 確認テスト 20点（第3・6・10回）※各パートについて、知識の定着を確認するための小テストを行います。４ 公務員試験に関する情報整理ノート 15点※公務員試験のサイトや動画を見て、気づいた点をまとめていただきます５ 公務員に関する発展レポート 15点※いずれかの回で取り上げたテーマについて、調べたことをまとめていただきます※４と５は、各自でいずれかを選択してください。",
-      "reviewed": true,
-      "warnings": [
-        "原文の点数は 25+40+20+15+15=115 点だが、④情報整理ノートと⑤発展レポートは「いずれかを選択」のため合計100点。"
-      ]
-    },
-    {
-      "courseCode": "1G00101003",
-      "scheduleCd": "34NBBF1001-003",
-      "courseName": "哲学Ａ 3",
-      "semester": "秋学期",
-      "enrollment": "add-plan",
-      "components": [
-        {
-          "name": "毎回の課題",
-          "weightPercent": 84,
-          "kind": "assignment",
-          "perSession": true,
-          "scenario": null,
-          "note": "6%×14回"
-        },
-        {
-          "name": "レポート試験",
-          "weightPercent": 16,
-          "kind": "final-exam",
-          "perSession": false,
-          "scenario": null,
-          "note": "レポート形式の試験"
-        }
-      ],
-      "cutoffs": [],
-      "retake": null,
-      "sourceText": "毎回の課題・・・８４％（６％×１４回）レポート試験・・・１６％東洋大学の成績評価基準に準拠する。",
-      "reviewed": true,
-      "warnings": [
-        "全15回のうち課題は14回分（6%×14）。どの回が対象外かは記載なし。"
       ]
     },
     {
@@ -1056,6 +874,260 @@
       "reviewed": true,
       "warnings": [
         "簿記検定結果の加点の量は記載なし。"
+      ]
+    },
+    {
+      "courseCode": "2020002001",
+      "scheduleCd": "3420200020-001",
+      "courseName": "経済学Ｂ",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "毎回の課題提出",
+          "weightPercent": 30,
+          "kind": "assignment",
+          "perSession": true,
+          "scenario": null,
+          "note": ""
+        },
+        {
+          "name": "学期末テスト",
+          "weightPercent": 70,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": null,
+          "note": ""
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "成績評価方法： 以下の2点から総合的に評価する： ・毎回の課題提出（30％） ・学期末テスト（70％） 成績評価基準：成績は東洋大学の成績評価基準に準拠する。 毎回の課題に関する学修到達目標については、以下の観点から評価する： （80～100点）授業内容を発展させて自らの意見を論理的に述べることができる。 （60～79点）授業で学んだ考え方に自らの意見を交えて述べることができる。 （30～59点）授業で学んだ考え方を矛盾なくまとめることができる。 （1～29点）授業で学んだ考え方を部分的に述べることができる。",
+      "reviewed": true,
+      "warnings": []
+    },
+    {
+      "courseCode": "2050107002",
+      "scheduleCd": "3420501070-002",
+      "courseName": "心理学Ａ2",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "毎回の小テスト",
+          "weightPercent": 80,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": ""
+        },
+        {
+          "name": "予習課題",
+          "weightPercent": 20,
+          "kind": "assignment",
+          "perSession": false,
+          "scenario": null,
+          "note": "段階評価（20点: 根拠つきで考えを表明 / 16-19 / 12-15 / 1-10 点: 考えが表明されていない）。回数は記載なし"
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "毎回の小テストの成績，および，予習課題の内容を踏まえて成績を評価します。小テストが80％，予習課題が20％です。予習課題については，以下の通り評価します。(20 点)自分の考えが根拠を含めてきちんと表明できている。(16-19 点)根拠等に一部不足はあるが，自分の考えがきちんと表明できている。 (12-15 点)根拠等が不足しているが，自分の考えが一定程度表明できている。(1-10 点)自分の考えが表明されていない。",
+      "reviewed": true,
+      "warnings": [
+        "予習課題の20/16-19/12-15/1-10点が1回分の採点基準か、20%全体への換算かは原文から不明。",
+        "出席・提出回数の足切り記載なし。"
+      ]
+    },
+    {
+      "courseCode": "10E0101001",
+      "scheduleCd": "3410E01010-001",
+      "courseName": "地域と生活",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "各講義の履修確認（Respon出席確認＋付帯記述・選択クイズ）",
+          "weightPercent": 70,
+          "kind": "attendance",
+          "perSession": true,
+          "scenario": null,
+          "note": "出席確認とクイズを兼ねる"
+        },
+        {
+          "name": "レポート",
+          "weightPercent": 30,
+          "kind": "report",
+          "perSession": false,
+          "scenario": null,
+          "note": ""
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "１．各講義の履修確認（レスポンによる出席確認＋付帯記述・選択クイズ）（70％）およびレポートの評価（30％） ２．本学の成績評価基準に従って成績をつけます。",
+      "reviewed": true,
+      "warnings": [
+        "履修確認が出席とクイズを兼ねるため、1回あたりの配点・欠席時の扱いは不明。"
+      ]
+    },
+    {
+      "courseCode": "2010165001",
+      "scheduleCd": "3420101650-001",
+      "courseName": "生きものの世界Ｂ１",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "講義後の小テスト",
+          "weightPercent": 70,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": ""
+        },
+        {
+          "name": "期末試験",
+          "weightPercent": 30,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": null,
+          "note": ""
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "submission-count",
+          "text": "小テストの提出回数が10回未満の場合は評価対象外",
+          "threshold": 10,
+          "unit": "count"
+        }
+      ],
+      "retake": null,
+      "sourceText": "成績評価は「東洋大学の成績評価基準」に準拠して行う。講義後の小テストの点数（70%）と、期末試験（30%）の合計で、総合判断する。なお、小テストの提出回数が10回未満の場合は、評価対象外となるので注意すること。",
+      "reviewed": true,
+      "warnings": [
+        "「10回未満」は10回提出で足りると読める（10回以上提出が条件）。全体の小テスト回数は記載なし。"
+      ]
+    },
+    {
+      "courseCode": "2010127002",
+      "scheduleCd": "3420101270-002",
+      "courseName": "環境の科学Ｂ２",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "各回の授業で行う小テスト",
+          "weightPercent": 100,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": "配分の数値記載はないが、小テストのみで評価すると読める"
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "attendance",
+          "text": "出席は ToyoNet-ACE に記録された視聴状況・回答状況で判断（基準回数の記載なし）",
+          "threshold": null,
+          "unit": null
+        }
+      ],
+      "retake": null,
+      "sourceText": "1.各回の授業で行う小テストで成績評価を行います。2.授業への出席はToyoNet-Aceに記録された視聴状況や回答状況によって判断します。",
+      "reviewed": true,
+      "warnings": [
+        "配分の数値記載なし。「小テストで成績評価を行います」から100%と解釈した（要確認）。",
+        "出席の基準回数は記載なし。"
+      ]
+    },
+    {
+      "courseCode": "1020010002",
+      "scheduleCd": "3410200100-002",
+      "courseName": "公務員論入門２",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "出席登録",
+          "weightPercent": 25,
+          "kind": "attendance",
+          "perSession": true,
+          "scenario": null,
+          "note": "第1回〜第13回、振り返り"
+        },
+        {
+          "name": "授業の場で課されるコメント等",
+          "weightPercent": 40,
+          "kind": "assignment",
+          "perSession": false,
+          "scenario": null,
+          "note": "第1・2・4・5・7・8・9回（7回）。公務員制度への問題意識と自分の考えを示せるか"
+        },
+        {
+          "name": "確認テスト",
+          "weightPercent": 20,
+          "kind": "quiz",
+          "perSession": false,
+          "scenario": null,
+          "note": "第3・6・10回（3回）"
+        },
+        {
+          "name": "公務員試験に関する情報整理ノート",
+          "weightPercent": 15,
+          "kind": "assignment",
+          "perSession": false,
+          "scenario": "ノート選択",
+          "note": "発展レポートとどちらか選択"
+        },
+        {
+          "name": "公務員に関する発展レポート",
+          "weightPercent": 15,
+          "kind": "report",
+          "perSession": false,
+          "scenario": "レポート選択",
+          "note": "情報整理ノートとどちらか選択"
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "成績評価は「東洋大学成績評価基準」に準拠し、詳細は以下のとおりとします。１ 出席登録 25点（第1回～第13回、振り返り）２ 授業の場で課されるコメント等の内容 40点（第1・2・4・5・7・8・9回）※テーマについての意見や公務員試験対策の一環として公務員の制度と現実への問題意識を持ち、自らの考えを示せるかどうかを評価します。３ 確認テスト 20点（第3・6・10回）※各パートについて、知識の定着を確認するための小テストを行います。４ 公務員試験に関する情報整理ノート 15点※公務員試験のサイトや動画を見て、気づいた点をまとめていただきます５ 公務員に関する発展レポート 15点※いずれかの回で取り上げたテーマについて、調べたことをまとめていただきます※４と５は、各自でいずれかを選択してください。",
+      "reviewed": true,
+      "warnings": [
+        "原文の点数は 25+40+20+15+15=115 点だが、④情報整理ノートと⑤発展レポートは「いずれかを選択」のため合計100点。"
+      ]
+    },
+    {
+      "courseCode": "1G00101003",
+      "scheduleCd": "34NBBF1001-003",
+      "courseName": "哲学Ａ 3",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "毎回の課題",
+          "weightPercent": 84,
+          "kind": "assignment",
+          "perSession": true,
+          "scenario": null,
+          "note": "6%×14回"
+        },
+        {
+          "name": "レポート試験",
+          "weightPercent": 16,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": null,
+          "note": "レポート形式の試験"
+        }
+      ],
+      "cutoffs": [],
+      "retake": null,
+      "sourceText": "毎回の課題・・・８４％（６％×１４回）レポート試験・・・１６％東洋大学の成績評価基準に準拠する。",
+      "reviewed": true,
+      "warnings": [
+        "全15回のうち課題は14回分（6%×14）。どの回が対象外かは記載なし。"
       ]
     }
   ]
