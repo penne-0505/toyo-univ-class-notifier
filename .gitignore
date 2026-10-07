@@ -32,3 +32,8 @@ docs/*.pdf
 
 # 一時ファイル（実ページの取得結果など、本物の個人データを含みうる）
 tmp/
+
+# Local scratch that may contain personal data (never publish)
+.playwright-cli/
+articles/
+.claude/worktrees/
