@@ -6,9 +6,9 @@
  * artifacts/toyo/register-result.* に残す。
  *
  * Usage:
- *   npm run toyo:register -- --add 3423101150-001,3420101290-001        # dry-run
+ *   npm run toyo:register -- --add 3499301150-001,3499101290-001        # dry-run
  *   npm run toyo:register -- --file plan.json                            # [{"scheduleCd": "..."}] or ["..."]
- *   npm run toyo:register -- --file plan.json --cancel 3420200020-001 --exec
+ *   npm run toyo:register -- --file plan.json --cancel 3499200020-001 --exec
  *   npm run toyo:register -- --add                                        # 変更なし（現在の登録状態を見る）
  *
  * 科目の選択ID（scheduleCd）は output/toyo/registration-candidates.json（npm run toyo:candidates）で分かる。

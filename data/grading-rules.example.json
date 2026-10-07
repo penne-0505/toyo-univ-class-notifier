@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "notes": [
+    "これは架空の科目だけで作った見本。実データ（data/grading-rules.json）は git 管理外で、`npm run toyo:grading-rules` が生成する。",
+    "reviewed: true の科目は人が sourceText と突き合わせて修正済み。npm run toyo:grading-rules を再実行しても上書きされない。",
+    "weightPercent: %換算の配点。原文が点数表記（100点満点）の科目は同値として%で記録。配分が書かれていないものは null。",
+    "scenario: 配点が複数案ある科目の案名。null の要素は全案共通、scenario 付きは「共通 + その案」で合計100になる。",
+    "cutoffs[].threshold: unit=ratio は出席に必要な割合（0〜1。例: 2/3 以上の出席 → 0.667）、unit=count は原文の回数そのまま。null は数値なし。条件の向きは text を優先して読むこと。",
+    "perSession: 毎回（各回）課される要素。1回分の配点は note か原文を参照。",
+    "enrollment: registered=登録済み / add-plan=追加登録候補 / reference=別学期の参考。"
+  ],
+  "courses": [
+    {
+      "courseCode": "9999900001",
+      "scheduleCd": "3499999000-001",
+      "courseName": "架空の経営学Ａ",
+      "semester": "春学期",
+      "enrollment": "registered",
+      "components": [
+        {
+          "name": "期末試験",
+          "weightPercent": 50,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": null,
+          "note": "試験期間内に対面で実施"
+        },
+        {
+          "name": "中間テスト",
+          "weightPercent": 20,
+          "kind": "midterm",
+          "perSession": false,
+          "scenario": null,
+          "note": "第8回に実施"
+        },
+        {
+          "name": "小テスト",
+          "weightPercent": 10,
+          "kind": "quiz",
+          "perSession": true,
+          "scenario": null,
+          "note": "内訳: 1%×10"
+        },
+        {
+          "name": "レポート",
+          "weightPercent": 10,
+          "kind": "report",
+          "perSession": false,
+          "scenario": null,
+          "note": "学期末に1本"
+        },
+        {
+          "name": "授業への参加度",
+          "weightPercent": 10,
+          "kind": "participation",
+          "perSession": false,
+          "scenario": null,
+          "note": "コメントシートの内容"
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "attendance",
+          "text": "授業回数の3分の2以上の出席がない場合は評価の対象としない。",
+          "threshold": 0.667,
+          "unit": "ratio"
+        },
+        {
+          "type": "exam-required",
+          "text": "期末試験を受けなかった場合は単位不可とする。",
+          "threshold": null,
+          "unit": null
+        }
+      ],
+      "retake": null,
+      "sourceText": "期末試験50％、中間テスト20％、小テスト10％（1％×10回）、レポート10％、授業への参加度10％で評価する。授業回数の3分の2以上の出席がない場合は評価の対象としない。期末試験を受けなかった場合は単位不可とする。",
+      "reviewed": true,
+      "warnings": []
+    },
+    {
+      "courseCode": "9999900002",
+      "scheduleCd": null,
+      "courseName": "サンプル統計学Ｂ２",
+      "semester": "秋学期",
+      "enrollment": "add-plan",
+      "components": [
+        {
+          "name": "演習課題",
+          "weightPercent": 30,
+          "kind": "assignment",
+          "perSession": true,
+          "scenario": null,
+          "note": "毎回の演習。1回分の配点は原文参照"
+        },
+        {
+          "name": "期末試験",
+          "weightPercent": 70,
+          "kind": "final-exam",
+          "perSession": false,
+          "scenario": "試験あり",
+          "note": "試験を実施する場合"
+        },
+        {
+          "name": "最終レポート",
+          "weightPercent": 70,
+          "kind": "report",
+          "perSession": false,
+          "scenario": "試験なし",
+          "note": "試験を実施しない場合はレポートで代替"
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "submission-count",
+          "text": "演習課題の提出が10回未満の場合は評価対象外とする。",
+          "threshold": 10,
+          "unit": "count"
+        },
+        {
+          "type": "other",
+          "text": "未提出の課題は0点とする。",
+          "threshold": null,
+          "unit": null
+        }
+      ],
+      "retake": "やむを得ない事情で期末試験を受けられなかった場合は、申請により追試験を行う。",
+      "sourceText": "毎回の演習課題30％と、期末試験70％（試験を実施しない場合は最終レポート70％）で評価する。演習課題の提出が10回未満の場合は評価対象外とする。未提出の課題は0点とする。やむを得ない事情で期末試験を受けられなかった場合は、申請により追試験を行う。",
+      "reviewed": false,
+      "warnings": [
+        "試験を実施するかどうかは原文から断定できない。2 案（試験あり / 試験なし）で記録した。",
+        "出席の扱いの記載なし。"
+      ]
+    },
+    {
+      "courseCode": "9999900003",
+      "scheduleCd": null,
+      "courseName": "デモ演習C1",
+      "semester": "春学期",
+      "enrollment": "reference",
+      "components": [
+        {
+          "name": "提出物",
+          "weightPercent": null,
+          "kind": "other",
+          "perSession": false,
+          "scenario": null,
+          "note": "配分の記載なし"
+        },
+        {
+          "name": "出席",
+          "weightPercent": null,
+          "kind": "attendance",
+          "perSession": true,
+          "scenario": null,
+          "note": "欠席5回以上は不可"
+        }
+      ],
+      "cutoffs": [
+        {
+          "type": "attendance",
+          "text": "欠席が5回以上の場合は単位を認めない。",
+          "threshold": 5,
+          "unit": "count"
+        },
+        {
+          "type": "attendance",
+          "text": "出席状況を重視する。",
+          "threshold": null,
+          "unit": null
+        }
+      ],
+      "retake": null,
+      "sourceText": "提出物および出席状況を総合して評価する。欠席が5回以上の場合は単位を認めない。",
+      "reviewed": false,
+      "warnings": [
+        "配分（%・点）を抽出できなかった。原文を確認すること。",
+        "配分の合計が 100 になっていない: 合計 0%、配点不明 2 件。"
+      ]
+    }
+  ]
+}

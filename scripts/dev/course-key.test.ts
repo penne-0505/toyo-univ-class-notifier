@@ -10,13 +10,13 @@ import { courseKey } from '../lib/course-key';
 import { courseKey as workerCourseKey } from '../../worker/src/course-key';
 
 const sameKey: Array<[string, string]> = [
-  ['哲学B2', '哲学Ｂ２'],
-  ['生命と倫理　1', '生命と倫理 1'],
-  ['生命と倫理　1', '生命と倫理1'],
-  ['金融システム論１', '金融システム論1'],
-  ['社会学Ａ2', '社会学A2'],
-  ['AI基礎【オンデマンド】', 'ＡＩ基礎【オンデマンド】'],
-  ['ai基礎', 'AI基礎'],
+  ['サンプル統計学B2', 'サンプル統計学Ｂ２'],
+  ['サンプル倫理学　1', 'サンプル倫理学 1'],
+  ['サンプル倫理学　1', 'サンプル倫理学1'],
+  ['サンプル金融論１', 'サンプル金融論1'],
+  ['サンプル人間学Ａ2', 'サンプル人間学A2'],
+  ['ZQ入門【オンデマンド】', 'ＺＱ入門【オンデマンド】'],
+  ['zq入門', 'ZQ入門'],
 ];
 
 describe('courseKey', () => {
@@ -28,15 +28,15 @@ describe('courseKey', () => {
   }
 
   it('代表的な出力', () => {
-    assert.equal(courseKey('哲学Ｂ２'), '哲学B2');
-    assert.equal(courseKey('生命と倫理　1'), '生命と倫理1');
-    assert.equal(courseKey('AI基礎【オンデマンド】'), 'AI基礎【オンデマンド】');
-    assert.equal(courseKey('金融システム論１'), '金融システム論1');
+    assert.equal(courseKey('サンプル統計学Ｂ２'), 'サンプル統計学B2');
+    assert.equal(courseKey('サンプル倫理学　1'), 'サンプル倫理学1');
+    assert.equal(courseKey('ZQ入門【オンデマンド】'), 'ZQ入門【オンデマンド】');
+    assert.equal(courseKey('サンプル金融論１'), 'サンプル金融論1');
   });
 
   it('別の科目は別のキーになる（末尾の数字や学期記号は落とさない）', () => {
-    assert.notEqual(courseKey('哲学B2'), courseKey('哲学B1'));
-    assert.notEqual(courseKey('哲学A2'), courseKey('哲学B2'));
+    assert.notEqual(courseKey('サンプル統計学B2'), courseKey('サンプル統計学B1'));
+    assert.notEqual(courseKey('サンプル統計学A2'), courseKey('サンプル統計学B2'));
   });
 
   it('scripts 側と worker 側で出力が一致する', () => {

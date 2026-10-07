@@ -82,7 +82,7 @@ export type RegistrationCandidate = {
   syllabusOption: string | null;
   syllabusOptionEn: string | null;
   slots: { dayId: string; day: string; periodId: string; period: number | null }[];
-  /** 他キャンパス開講の全学科目などは定員超過で抽選になりやすい（2026秋は赤羽台のオンデマンド4科目が落選）。確定ではない */
+  /** 他キャンパス開講の全学科目などは定員超過で抽選になりやすい（落選する例がある）。確定ではない */
   lotteryRisk: boolean;
   syllabus?: CandidateSyllabus | null;
 };

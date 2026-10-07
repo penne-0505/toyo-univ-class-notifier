@@ -23,3 +23,9 @@ state/
 .idea/
 .vscode/
 .DS_Store
+
+# Local-only data (private; delivered via the private toyo-data repo)
+data/grading-rules.json
+
+# 配布物（所属学部が分かるファイル名のため管理しない）
+docs/*.pdf

@@ -27,8 +27,8 @@ function usage(): string {
     '  npm run toyo:syllabus -- --list',
     '',
     'Examples:',
-    '  npm run toyo:syllabus -- --course-code 2D10343001',
-    '  npm run toyo:syllabus -- 自然災害と防災',
+    '  npm run toyo:syllabus -- --course-code 9D10343001',
+    '  npm run toyo:syllabus -- サンプル防災論',
   ].join('\n');
 }
 

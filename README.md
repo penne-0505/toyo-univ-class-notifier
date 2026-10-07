@@ -118,7 +118,7 @@ npm run toyo:export-enrollment           # 履修登録確認表で結果を確�
 npm run toyo:lottery                     # 抽選実施科目の当落を確認
 ```
 
-`plan.json` は `["scheduleCd", ...]` の配列（`registration-candidates.json` の `scheduleCd`）。履修上限（経営学部第2部は学期 24 単位）や重複はサーバー側で判定され、エラーがあれば何も登録されない。
+`plan.json` は `["scheduleCd", ...]` の配列（`registration-candidates.json` の `scheduleCd`）。履修上限（所属学部ごとに決まる。例: 学期 24 単位）や重複はサーバー側で判定され、エラーがあれば何も登録されない。
 
 追加登録期間は `toyo:candidates -- --add` で候補を取り直し、`toyo:register -- --file plan.json --period add --max-credits 24 --skip-missing` を使う。手順は `docs/toyo-automation-runbook.md` の「追加登録期間の手順」を参照。
 

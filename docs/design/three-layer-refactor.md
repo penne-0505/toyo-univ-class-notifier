@@ -43,16 +43,16 @@
    {
      "builtAt": "...",
      "courses": [{
-       "courseCode": "2310126001",
+       "courseCode": "9930126001",
        "semester": "秋学期",
-       "names": { "portal": "組織行動論", "ace": "組織行動論", "key": "組織行動論" },
+       "names": { "portal": "架空行動論", "ace": "架空行動論", "key": "架空行動論" },
        "aceCourseId": "10931xxx",
-       "scheduleCd": "3423101260-001",
+       "scheduleCd": "3499301260-001",
        "slots": [{ "day": "木", "period": "6" }],
        "has": { "syllabus": true, "gradingRules": true, "aceCourse": false },
        "warnings": ["ACE のコース一覧にまだ無い（登録の反映待ちの可能性）"]
      }],
-     "aceOnly": [{ "aceCourseId": "...", "name": "生命と倫理/生命倫理 1" }]
+     "aceOnly": [{ "aceCourseId": "...", "name": "サンプル倫理学/サンプル倫理 1" }]
    }
    ```
    `names.key` は共通の正規化（NFKC・空白除去・大文字化）。正規化関数は `scripts/lib/course-key.ts` に 1 つだけ置き、Worker は同じ実装をコピーしてテストで一致を保証する。
@@ -115,7 +115,7 @@ npm scripts と systemd ユニットの名前は変えない。
      - `toyo-fetch-registration-candidates.ts` の `normalize`、`lib/toyonet-ace.ts` / `lib/toyo-syllabus.ts` の `normalizeText`: 空白を畳むだけの表示用整形。キーではない。
      - `lib/toyo-summary.ts`（337・354 行付近）: 科目名を `===`、課題タイトルを `includes(courseName)` と先頭 4 文字で突き合わせており、正規化していない。summary を純粋化するとき index の `aceCourseId` / `names.key` で引き直す候補。
      - `lib/toyonet-ace-coursework.ts:291` と Worker の `findCourseworkForCode`: 授業コードの大文字化比較。名前ではなくコードの照合なので変更なし（index も同じ比較）。
-     - `scheduleCd` の推定式（`'34' + 先頭 7 桁 + '0-' + 末尾 3 桁`）は `scripts/toyo-grading-rules.ts` の `scheduleCdFromCourseCode` と `build/course-index.ts` の `inferScheduleCd` に重複している。AI基礎（XJ13900003 → 実際は 34XJ128700-002）のように式が合わない例があるため、index は「候補ファイル → grading-rules → 推定（`scheduleCdInferred: true`）」の順で引く。
+     - `scheduleCd` の推定式（`'34' + 先頭 7 桁 + '0-' + 末尾 3 桁`）は `scripts/toyo-grading-rules.ts` の `scheduleCdFromCourseCode` と `build/course-index.ts` の `inferScheduleCd` に重複している。ZQ入門（XJ99900003 → 実際は 34XJ999700-002）のように式が合わない例があるため、index は「候補ファイル → grading-rules → 推定（`scheduleCdInferred: true`）」の順で引く。
      - シラバスのファイル名の整形（`safeStem` / `safeFileStem` / `syllabusFileStem` / `poolFileName`）が 4 か所に複製されている。授業コードが英数字だけなら結果は同じ。
    - 実装中に決めたこと: `course-index.json` に `intensive`（集中講義は `slots` が空）、`currentSemester`、`academicYear` を足した。`scripts/lib/toyo-paths.ts`（repoRoot / outputDir / dataDir）を切り出した（`toyo-academic-schedule.ts` が `toyo-enrollment.ts` 経由で playwright を読み込んでいたため）。`scripts/dev/course-index.test.ts` が、`scripts/build/` に playwright / `lib/toyo` / `toyo-enrollment` の import が無いことと、`course-index` を読み込んでも playwright が読み込まれないことを検査する（メモにある typecheck 用 lint の先取り）。
 2. **組み立て層の純化と改名**: `buildSummary` を純粋関数にし、summary の中の取得呼び出しを削除。`toyo-context.ts` を分割し、自動 sync を削除。summary の置き場所を移し、Worker にフォールバックを入れてデプロイ。突き合わせで差分を確認。

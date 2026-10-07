@@ -96,7 +96,7 @@ function matchAceCourses(registered: RegistrationInput['courses'], aceCourses: A
   const matches = new Map<string, AceCourse>();
   const used = new Set<string>();
 
-  // 1. 授業コード（ACE は 1 コースに複数コードを持つことがある。例: 天文学B7 = 1010222007 / 2010133001）
+  // 1. 授業コード（ACE は 1 コースに複数コードを持つことがある。例: サンプル地理学B7 = 9810222007 / 9910133001）
   for (const course of registered) {
     const code = course.courseCode.toUpperCase();
     const hit = aceCourses.find(

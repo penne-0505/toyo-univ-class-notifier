@@ -34,7 +34,7 @@ export type CourseworkCourse = {
   courseId: string;
   /** コースページ見出しの ACE 表記 */
   courseName: string;
-  /** コース一覧（home_course_all）上の表記。見出しと違うことがある（天文学B / 天文学B7 など）。 */
+  /** コース一覧（home_course_all）上の表記。見出しと違うことがある（サンプル地理学B / サンプル地理学B7 など）。 */
   aceListName: string | null;
   /** 登録科目（registration-data.json）に突き合わせた授業コード。無ければ ACE 上の最初の授業コード。 */
   courseCode: string | null;

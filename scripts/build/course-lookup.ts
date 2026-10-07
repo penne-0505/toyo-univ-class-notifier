@@ -57,7 +57,7 @@ export function createCourseResolver(index: CourseIndex, coursework: CourseworkR
     knownAceIds.add(ace.aceCourseId);
     aceIdByKey.set(courseKey(ace.name), ace.aceCourseId);
   }
-  // ACE の見出し名・一覧名・登録科目名はコースごとに揺れる（天文学B7 / 天文学B など）。index の names.ace は一覧名なので、
+  // ACE の見出し名・一覧名・登録科目名はコースごとに揺れる（サンプル地理学B7 / サンプル地理学B など）。index の names.ace は一覧名なので、
   // 課題・お知らせが見出し名で来た場合に備え、coursework の 3 つの名前も ACE courseId への橋にする。
   for (const course of coursework?.courses ?? []) {
     knownAceIds.add(course.courseId);

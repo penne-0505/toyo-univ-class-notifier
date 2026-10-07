@@ -5,7 +5,7 @@
 
 /**
  * 授業コード → ポータルの時間割コード（scheduleCd）の推定式: '34' + 先頭 7 桁 + '0-' + 末尾 3 桁。
- * AI基礎（XJ13900003 → 実際は 34XJ128700-002）のように合わない科目があるため、あくまで推定。
+ * ZQ入門（XJ99900003 → 実際は 34XJ999700-002）のように合わない科目があるため、あくまで推定。
  * 候補ファイル・評価ルールにある実値を先に引き、無いときだけこの式を使う（build/course-index.ts の resolveScheduleCd）。
  */
 export function inferScheduleCd(courseCode: string): string {
