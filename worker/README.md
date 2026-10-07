@@ -18,8 +18,8 @@ toyo:publish ─ PUT/DELETE (書き込みキー) ─▶ Worker ─▶ KV (DATA)
 | メソッド | パス | 内容 |
 | --- | --- | --- |
 | GET | `/` | 認証不要。API の説明（text/markdown） |
-| GET | `/v1/health` | 認証不要。`{ ok, updatedAt }` |
-| GET | `/v1/meta` | `meta.json`（publishedAt, files, sourceStatus）＋ `apiVersion`、`updatedAt` |
+| GET | `/v1/health` | 認証不要。`{ ok, updatedAt, degraded }`。`degraded` は取得側の定期ジョブにアラート中のものがあるか（ジョブ名・詳細は出さない） |
+| GET | `/v1/meta` | `meta.json`（publishedAt, files, sourceStatus）＋ `apiVersion`、`updatedAt`、`health`（`output/toyo/health.json` の内容。定期ジョブごとの最終成功・連続失敗・`alerting`。直接 PUT された health.json があればそちらを優先） |
 | GET | `/v1/context` | `agent-context.md`（text/markdown）。`?format=json` で JSON |
 | GET | `/v1/files` | 保存中のパス・サイズ・fetchedAt |
 | GET | `/v1/files/{path}` | ファイルをそのまま返す。許可は `output/toyo/`、`output/bot/summary.json`、`data/` のみ（他は 404） |
@@ -31,6 +31,8 @@ toyo:publish ─ PUT/DELETE (書き込みキー) ─▶ Worker ─▶ KV (DATA)
 | PUT | `/v1/files/{path}` | 本文をそのまま保存（`Content-Type` も保存）。書き込みキーのみ。25 MiB 超は 413 |
 | PUT | `/v1/meta` | `meta.json` を保存し `updatedAt` を更新。書き込みキーのみ |
 | DELETE | `/v1/files/{path}` | 削除。書き込みキーのみ |
+
+認証済みの GET 応答は、`health.alerting` が空でないとき（劣化中）だけ `X-Toyo-Degraded: 1` ヘッダが付く。
 
 書き込みキーは読み取りも可能。読み取りキーで PUT/DELETE すると 403。
 

@@ -259,6 +259,15 @@ export type PublishMeta = {
   publishedAt: string;
   files: Record<string, { fetchedAt: string | null; source: string }>;
   sourceStatus: SourceStatus | null;
+  /** toyo:health が書く定期ジョブの状態（output/toyo/health.json の内容）。古い meta には無い。 */
+  health?: HealthSnapshot | null;
+};
+
+/** output/toyo/health.json。alerting が空でなければ「劣化」。 */
+export type HealthSnapshot = {
+  generatedAt: string;
+  jobs: Record<string, unknown>;
+  alerting: string[];
 };
 
 export type FileMetadata = { contentType: string; size: number; storedAt: string };

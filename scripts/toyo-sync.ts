@@ -29,9 +29,8 @@ export async function main(): Promise<void> {
   if (enrollment.fetchStatus === 'error') {
     console.warn(`Portal fetch status: ${enrollment.fetchStatus} (pageTitle: ${enrollment.pageTitle})`);
   }
-  console.log(`Enrollment status: ${enrollment.fetchStatus}`);
-  console.log(`Enrollment artifacts refreshed.`);
-  console.log(`Discord summary: ${discordSummaryOutputPath}`);
+  // journal を汚さないよう 1 行にまとめる
+  console.log(`[sync] enrollment=${enrollment.fetchStatus} summary=${discordSummaryOutputPath}`);
 }
 
 if (require.main === module) {

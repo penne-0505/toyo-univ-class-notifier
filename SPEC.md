@@ -575,7 +575,8 @@ CLI:
 --no-sync               同期せず既存ファイルのみ使用（--sync と排他）
 --max-age-minutes <n>   summary.json が n 分より古ければ同期（既定 30）
 --horizon-days <n>      課題の締切ホライズン日数（既定 7）
---format markdown|json  標準出力形式（既定 markdown。ファイルは常時両方書き出し）
+--print                 全文を標準出力に出す（既定は 1 行サマリ `[context] <JST> today=n tomorrow=m warnings=k` のみ）
+--format markdown|json  --print のときの標準出力形式（既定 markdown。ファイルは常時両方書き出し）
 ```
 
 処理:
@@ -588,10 +589,10 @@ CLI:
    - `classes`: `summary.todayClasses`/`tomorrowClasses` を圧縮形式へ変換（§9 `AgentClass`）
    - `assignments`: `dueAt` が `[now-1h, now+horizonDays]` 内のもの（最大 20 件）と `dueAt === null`（最大 12 件）に分割
    - `announcements`: カテゴリ `休講`/`補講`/`教室変更`（最大 12 件）とその他（最大 6 件）に分割
-   - `warnings`: 同期失敗・stale・portal `fetchStatus` が `error`/`empty`・ACE 各ソース不可・summary 内 errors・registration 不在・fetchStatus 不一致・カレンダー不在/エラー、の各条件で固定メッセージを積む
+   - `warnings`: 同期失敗・stale・portal `fetchStatus` が `error`/`empty`・ACE 各ソース不可・summary 内 errors・registration 不在・fetchStatus 不一致・カレンダー不在/エラー、定期ジョブの失敗・停止（`output/toyo/health.json`、詳細は runbook「失敗の検知と通知」）、の各条件でメッセージを積む
    - `agentNotes`: 利用上の注意 5 項目（固定文。鮮度・エラー時の扱い・`dueAt=null` の扱い・`basic-info.md` 参照等）
    - `sourceFiles`: 参照ファイルの絶対パス一覧
-5. `agent-context.json`（2 スペース整形）と `agent-context.md`（§9 の形式）を書き出し、`--format` に応じてどちらかを標準出力
+5. `agent-context.json`（2 スペース整形）と `agent-context.md`（§9 の形式）を書き出し、`--print` のときだけ `--format` に応じてどちらかを標準出力
 
 ## 9. データスキーマ
 

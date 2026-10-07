@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto';
  * 注意: `updatedAt` / `postedAt` / `dueAt` などは本物のデータなので除外しない。
  */
 
-const TIME_KEY_PATTERN = /^(?:\w*(?:fetched|generated|built|saved|checked|published)At\w*|ageMinutes)$/i;
+// health.json の lastRunAt / lastSuccessAt も毎回変わるだけの時刻（変化検知から外す）
+const TIME_KEY_PATTERN = /^(?:\w*(?:fetched|generated|built|saved|checked|published)At\w*|last(?:run|success)At|ageMinutes)$/i;
 
 function stripTimeKeys(value: unknown): unknown {
   if (Array.isArray(value)) {

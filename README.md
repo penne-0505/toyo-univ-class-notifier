@@ -49,7 +49,7 @@ cd bot && uv sync && uv run toyo-discord-bot
 | `npm run toyo:coursework [-- --no-summary]` | ACE の全 2026 年度コースの提出状況を取得（`_report` / `_query` / `_survey` / `_grade` と提出記録 30 日）→ `output/toyo/toyonet-ace-coursework.json`。授業コードで `registration-data.json` と突き合わせる。取得後に summary.json を再生成（`--no-summary` で省略）。`toyo-coursework` タイマー（毎時 :20）用 |
 | `npm run toyo:calendar` | 内閣府CSVから祝日データを取得 |
 | `npm run toyo:run` | セッション疎通確認用の最小ランナー |
-| `npm run toyo:context` | エージェントが最初に読む圧縮コンテキストを生成 |
+| `npm run toyo:context [-- --print]` | エージェントが最初に読む圧縮コンテキストを `output/toyo/agent-context.{md,json}` に生成。標準出力は 1 行サマリのみ（全文は `--print`、JSON は `--print --format json`） |
 | `npm run toyo:candidates [-- --syllabus]` | 履修登録画面の全コマから登録可能な科目一覧を取得（`--syllabus` で夜間・集中科目のシラバスも取得、`--syllabus=all` で全科目） |
 | `npm run toyo:lottery` | 抽選実施科目一覧と当落（○/×）を取得（登録成功は確定ではない。落選科目は履修から削除される） |
 | `npm run toyo:credits` | 単位数集計表（卒業要件の充足状況・学期別 GPA）と履修・修得科目一覧（不合格含む）を取得 |
@@ -59,6 +59,7 @@ cd bot && uv sync && uv run toyo-discord-bot
 | `npm run toyo:publish [-- --dry-run --include-candidates --force --push-all-api]` | allowlist（`output/toyo/**`・`output/bot/summary.json`・`data/**`）を `~/toyo-data` へ同期し、時刻以外に差分があるときだけ commit & push。`meta.json` に鮮度・`sourceStatus` を書く。`TOYO_API_URL` / `TOYO_API_WRITE_KEY` があれば変化分を Worker にも PUT（`--push-all-api` で全件） |
 | `npm run toyo:watch` | ACE の未提出課題とお知らせだけ取得し、変化があれば summary / agent-context を再生成して publish（5 分タイマー用。失敗が続くと 15→30 分に自動バックオフ） |
 | `npm run toyo:daily` | 全取得（coursework → sync → credits → lottery → context）→ `toyo:publish --include-candidates --force`（24 時間タイマー用） |
+| `npm run toyo:health -- <record\|status\|test-notify>` | 定期ジョブ（watch / coursework / daily）の失敗検知と通知。`status` で状態一覧（アラート中なら終了コード 1）、`test-notify` でテスト通知。systemd の `ExecStopPost` が成否を記録する。閾値・送り先は `docs/toyo-automation-runbook.md` の「失敗の検知と通知」 |
 | `npm run typecheck` | TypeScript型チェック |
 
 ## 出力ファイル
@@ -158,6 +159,6 @@ uv pip install --python .venv/bin/python openpyxl pandas
 4. エージェントに授業相談を投げる前に `npm run toyo:context` で圧縮コンテキストを生成
 5. Bot を起動しておけば cron で自動同期 + 通知（同期失敗は3回連続後、1日1回だけ警告）
 
-`toyo:context` は既定で `summary.json` が 30 分より古い場合に `toyo:sync` を試みます。既存出力だけで確認したい場合は `npm run toyo:context -- --no-sync`、JSONを標準出力したい場合は `npm --silent run toyo:context -- --format json` を使います。
+`toyo:context` は既定で `summary.json` が 30 分より古い場合に `toyo:sync` を試みます。既存出力だけで確認したい場合は `npm run toyo:context -- --no-sync` を使います。標準出力は `[context] <JST> today=n tomorrow=m warnings=k` の 1 行だけで（journal を汚さないため）、全文は `output/toyo/agent-context.md` を読むか `--print` を付けます。JSON を標準出力したい場合は `npm --silent run toyo:context -- --print --format json` です。定期ジョブが失敗中・停止中のときは Warnings に載ります。
 
 ポータルが `システムエラー` / `タイムアウトしました。` / SSOログイン画面 / 多要素認証設定画面 のいずれかを返した場合はログイン喪失として扱います。共通ヘルパー `detectToyoSessionLoss` / `recoverToyoSessionIfNeeded` (`scripts/lib/toyo.ts`) が自動回復を試み、失敗した場合は手動再ログインを案内します。詳細は `docs/toyo-automation-runbook.md` を参照。

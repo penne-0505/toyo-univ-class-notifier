@@ -7,12 +7,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { repoRoot } from './lib/toyo-enrollment';
 import { extractFetchedAt, formatJst, normalizedHash } from './lib/toyo-normalize';
+import { apiConfig, apiFileUrl, apiRequest, contentTypeOf } from './lib/toyo-api';
 
 const execFileAsync = promisify(execFile);
 
 export const dataRepoDir = process.env.TOYO_DATA_DIR || path.join(os.homedir(), 'toyo-data');
 const dataRepoUrl = 'git@github.com-toyo-data:penne-0505/toyo-data.git';
 const CANDIDATES_REL = 'output/toyo/registration-candidates.json';
+const HEALTH_REL = 'output/toyo/health.json';
 
 /**
  * 公開してよいパスは allowlist だけ。除外リストには頼らない。
@@ -42,6 +44,7 @@ const SOURCE_COMMANDS: Array<[RegExp, string]> = [
   [/^output\/toyo\/lottery-results\./, 'toyo:lottery'],
   [/^output\/toyo\/registration-candidates\.json$/, 'toyo:candidates'],
   [/^output\/toyo\/agent-context\./, 'toyo:context'],
+  [/^output\/toyo\/health\.json$/, 'toyo:health'],
   [/^output\/toyo\/syllabus\//, 'toyo:syllabus'],
   [/^data\//, 'manual (data/)'],
 ];
@@ -81,13 +84,6 @@ async function saveApiPending(pending: ApiPending): Promise<void> {
   await fs.writeFile(API_PENDING_PATH, JSON.stringify(pending) + '\n', 'utf8');
 }
 
-function contentTypeOf(rel: string): string {
-  if (rel.endsWith('.json')) return 'application/json; charset=utf-8';
-  if (rel.endsWith('.md')) return 'text/markdown; charset=utf-8';
-  if (rel.endsWith('.html')) return 'text/html; charset=utf-8';
-  return 'application/octet-stream';
-}
-
 /**
  * 変化したファイルと meta.json を Worker（toyo-data-api）へ PUT/DELETE する。
  * GitHub が正本なので、失敗してもログに出すだけで例外は投げない。
@@ -99,9 +95,9 @@ async function pushToApi(args: {
   deletePaths: string[];
   meta: unknown | null;
 }): Promise<ApiPushResult | null> {
-  const baseUrl = process.env.TOYO_API_URL?.trim().replace(/\/+$/, '');
-  const key = process.env.TOYO_API_WRITE_KEY?.trim();
-  if (!baseUrl || !key) return null;
+  const config = apiConfig();
+  if (!config) return null;
+  const { baseUrl } = config;
 
   const pending = await loadApiPending();
   const putSet = new Set([...pending.put, ...args.putPaths]);
@@ -110,16 +106,9 @@ async function pushToApi(args: {
   const result: ApiPushResult = { put: 0, deleted: 0, failed: 0 };
   const next: ApiPending = { put: [], delete: [] };
 
-  const request = async (method: string, url: string, body?: Buffer, contentType?: string): Promise<void> => {
-    const res = await fetch(url, {
-      method,
-      headers: { Authorization: `Bearer ${key}`, ...(contentType ? { 'Content-Type': contentType } : {}) },
-      body: body as unknown as BodyInit | undefined,
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
-  };
-  const urlFor = (rel: string) => `${baseUrl}/v1/files/${rel.split('/').map(encodeURIComponent).join('/')}`;
+  const request = (method: string, url: string, body?: Buffer, contentType?: string): Promise<void> =>
+    apiRequest(config, method, url, body, contentType);
+  const urlFor = (rel: string) => apiFileUrl(baseUrl, rel);
 
   for (const rel of [...putSet].sort()) {
     const abs = args.sources.get(rel);
@@ -313,7 +302,17 @@ export async function publish(options: Options): Promise<PublishResult> {
       sourceStatus = null;
     }
   }
-  const meta = { publishedAt: now.toISOString(), files, sourceStatus };
+  // 定期ジョブの健康状態（toyo:health が書く）。クラウド側が「止まっているか」を meta だけで判断できるようにする
+  let health: unknown = null;
+  const healthBuf = await readIfExists(path.join(repoRoot, HEALTH_REL));
+  if (healthBuf) {
+    try {
+      health = JSON.parse(healthBuf.toString('utf8'));
+    } catch {
+      health = null;
+    }
+  }
+  const meta = { publishedAt: now.toISOString(), files, sourceStatus, health };
 
   const shouldCommit = changedFiles.length + deletedFiles.length > 0 || options.force;
 

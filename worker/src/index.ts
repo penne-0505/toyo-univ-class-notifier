@@ -1,10 +1,11 @@
-import type { Announcement, Assignment, CourseworkFile, DetailedClassSummary, DiscordSummary, FileMetadata, GradingRulesFile, PublishMeta, RegistrationData, SyllabusFile } from './types';
+import type { Announcement, Assignment, CourseworkFile, DetailedClassSummary, DiscordSummary, FileMetadata, GradingRulesFile, HealthSnapshot, PublishMeta, RegistrationData, SyllabusFile } from './types';
 import { assignmentCourseInfo, buildCourseDetail, buildCourseIndex, courseSummaryLine, resolveCourse, waitingAssignments } from './courses';
 
 const API_VERSION = '1';
 const MAX_BODY_BYTES = 25 * 1024 * 1024; // KV の値上限 25 MiB
 const FILE_PREFIX = 'f:';
 const META_KEY = 'meta';
+const HEALTH_FILE = 'output/toyo/health.json';
 const UPDATED_AT_KEY = 'updatedAt';
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -128,6 +129,19 @@ async function getUpdatedAt(env: Env): Promise<string | null> {
   return env.DATA.get(UPDATED_AT_KEY);
 }
 
+/**
+ * 定期ジョブの状態。遷移（アラート・回復）のときに toyo:health が直接 PUT する health.json が最新なので、
+ * それを優先し、無ければ publish が meta に載せた写しを使う。
+ */
+async function readHealth(env: Env, meta: PublishMeta | null): Promise<HealthSnapshot | null> {
+  const direct = await readJsonFile<HealthSnapshot>(env, HEALTH_FILE);
+  return direct ?? meta?.health ?? null;
+}
+
+function isDegraded(health: HealthSnapshot | null): boolean {
+  return Array.isArray(health?.alerting) && health.alerting.length > 0;
+}
+
 async function touch(env: Env): Promise<void> {
   await env.DATA.put(UPDATED_AT_KEY, new Date().toISOString());
 }
@@ -165,7 +179,7 @@ async function readLimitedBody(request: Request): Promise<Uint8Array> {
 async function handleMeta(env: Env): Promise<Response> {
   const [meta, updatedAt] = await Promise.all([env.DATA.get<PublishMeta>(META_KEY, 'json'), getUpdatedAt(env)]);
   if (!meta) throw new HttpError(404, 'meta.json はまだ投入されていません');
-  return json({ apiVersion: API_VERSION, updatedAt, ...meta });
+  return json({ apiVersion: API_VERSION, updatedAt, ...meta, health: await readHealth(env, meta) });
 }
 
 async function handleContext(env: Env, url: URL): Promise<Response> {
@@ -381,8 +395,8 @@ curl -H "Authorization: Bearer $TOYO_READ_KEY" https://<このホスト>/v1/cont
 
 | メソッド | パス | 内容 |
 | --- | --- | --- |
-| GET | /v1/health | 認証不要。\`{ ok, updatedAt }\` |
-| GET | /v1/meta | publishedAt、各ファイルの fetchedAt、sourceStatus、updatedAt |
+| GET | /v1/health | 認証不要。\`{ ok, updatedAt, degraded }\`。\`degraded: true\` は取得側の定期ジョブが失敗中（詳細は /v1/meta の \`health\`） |
+| GET | /v1/meta | publishedAt、各ファイルの fetchedAt、sourceStatus、updatedAt、health（定期ジョブの最終成功・連続失敗・alerting） |
 | GET | /v1/context | agent-context.md（text/markdown）。\`?format=json\` で JSON。まずこれを読む |
 | GET | /v1/files | 保存中のパスとサイズ・fetchedAt |
 | GET | /v1/files/{path} | ファイルをそのまま返す（output/toyo/, output/bot/summary.json, data/ のみ） |
@@ -403,10 +417,27 @@ curl -H "Authorization: Bearer $TOYO_READ_KEY" https://<このホスト>/v1/cont
 - \`sourceStatus.portal.fetchStatus\` が \`error\` のときは履修データを信用しないでください。
 - /v1/today, /v1/tomorrow の \`summaryDateMismatch: true\` は、summary の生成日と今日がずれている（授業一覧が古い）サイン。
 - 提出状況（\`/v1/courses/{key}\` の coursework、\`/v1/assignments\` の course.coursework）は \`toyo:coursework\`（毎時 :20）の取得時点。鮮度は \`courseworkFetchedAt\`。\`submitted: null\` は ACE の一覧から提出状態を読めなかった項目。
+- 取得側の定期ジョブ（watch / coursework / daily）が失敗中のとき、GET の応答に \`X-Toyo-Degraded: 1\` ヘッダが付きます。詳細は /v1/meta の \`health\`（\`alerting\` にジョブ名、各ジョブに lastSuccessAt / consecutiveFailures）。context の Warnings にも同じ内容が載ります。
 - \`dueAt\` が null の課題は締切不明です。差し迫った課題として扱わないでください。
 `;
 
 // ---------- ルーティング ----------
+
+/** 認証済みの GET 応答に、劣化中だけ X-Toyo-Degraded: 1 を付ける。 */
+async function withDegradedHeader(env: Env, response: Response): Promise<Response> {
+  if (!response.ok) return response;
+  let degraded = false;
+  try {
+    const meta = await env.DATA.get<PublishMeta>(META_KEY, 'json');
+    degraded = isDegraded(await readHealth(env, meta));
+  } catch {
+    return response; // 健康状態を読めなくても本来の応答は返す
+  }
+  if (!degraded) return response;
+  const out = new Response(response.body, response);
+  out.headers.set('X-Toyo-Degraded', '1');
+  return out;
+}
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -417,7 +448,9 @@ async function route(request: Request, env: Env): Promise<Response> {
     return new Response(INDEX_MD, { headers: { ...BASE_HEADERS, 'Content-Type': 'text/markdown; charset=utf-8' } });
   }
   if (path === '/v1/health' && method === 'GET') {
-    return json({ ok: true, updatedAt: await getUpdatedAt(env) });
+    // 認証不要の応答なので、劣化しているかどうかだけを返す（ジョブ名や詳細は出さない）
+    const [updatedAt, meta] = await Promise.all([getUpdatedAt(env), env.DATA.get<PublishMeta>(META_KEY, 'json')]);
+    return json({ ok: true, updatedAt, degraded: isDegraded(await readHealth(env, meta)) });
   }
   if (!path.startsWith('/v1/')) throw new HttpError(404, '見つかりません');
 
@@ -428,7 +461,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path.startsWith(filePrefix)) {
     const rel = parseFilePath(path.slice(filePrefix.length));
     if (rel === null) throw new HttpError(404, '見つかりません');
-    if (method === 'GET') return handleFileGet(env, rel);
+    if (method === 'GET') return withDegradedHeader(env, await handleFileGet(env, rel));
     if (method === 'PUT' || method === 'DELETE') {
       if (role !== 'write') throw new HttpError(403, '書き込みキーが必要です');
       return method === 'PUT' ? handleFilePut(env, request, rel) : handleFileDelete(env, rel);
@@ -437,7 +470,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/v1/meta') {
-    if (method === 'GET') return handleMeta(env);
+    if (method === 'GET') return withDegradedHeader(env, await handleMeta(env));
     if (method === 'PUT') {
       if (role !== 'write') throw new HttpError(403, '書き込みキーが必要です');
       return handleMetaPut(env, request);
@@ -446,6 +479,10 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (method !== 'GET') throw new HttpError(405, 'Method Not Allowed', { Allow: 'GET' });
+  return withDegradedHeader(env, await readRoute(path, url, env, nowMs));
+}
+
+async function readRoute(path: string, url: URL, env: Env, nowMs: number): Promise<Response> {
   switch (path) {
     case '/v1/context':
       return handleContext(env, url);

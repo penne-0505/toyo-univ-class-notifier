@@ -26,6 +26,8 @@ import {
   type PeriodView,
 } from './lib/toyo-academic-schedule';
 import { findGradingRule, gradingRulesPath, type GradingRule } from './lib/toyo-grading-rules';
+import { healthWarnings, loadHealthSnapshot, type HealthSnapshot } from './lib/toyo-health';
+import { formatJst } from './lib/toyo-normalize';
 
 type OutputFormat = 'markdown' | 'json';
 
@@ -35,6 +37,8 @@ type CliOptions = {
   maxAgeMinutes: number;
   horizonDays: number;
   format: OutputFormat;
+  /** 全文を標準出力に出す（既定は 1 行サマリのみ）。 */
+  print: boolean;
 };
 
 type SyncAttempt = {
@@ -191,14 +195,16 @@ function usage(): string {
     '  npm run toyo:context',
     '  npm run toyo:context -- --no-sync',
     '  npm run toyo:context -- --sync',
-    '  npm run toyo:context -- --format json',
+    '  npm run toyo:context -- --print                  全文（Markdown）を標準出力に出す',
+    '  npm run toyo:context -- --print --format json',
     '',
     'Options:',
     '  --sync                    Always run npm run toyo:sync before building context.',
     '  --no-sync                 Use existing output files only, even when stale.',
     `  --max-age-minutes <n>     Refresh when summary is older than n minutes. Default: ${defaultMaxAgeMinutes}.`,
     `  --horizon-days <n>        Include assignments due within n days. Default: ${defaultHorizonDays}.`,
-    '  --format markdown|json     Print format. Both output files are always written.',
+    '  --print                   Print the full context to stdout. Default: one-line summary only.',
+    '  --format markdown|json     Format used with --print. Both output files are always written.',
   ].join('\n');
 }
 
@@ -217,6 +223,7 @@ function parseArgs(argv: string[]): CliOptions {
     maxAgeMinutes: defaultMaxAgeMinutes,
     horizonDays: defaultHorizonDays,
     format: 'markdown',
+    print: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -231,6 +238,10 @@ function parseArgs(argv: string[]): CliOptions {
     }
     if (arg === '--no-sync') {
       options.noSync = true;
+      continue;
+    }
+    if (arg === '--print') {
+      options.print = true;
       continue;
     }
     if (arg === '--max-age-minutes') {
@@ -516,7 +527,9 @@ function buildWarnings(
   enrollment: EnrollmentData | null,
   calendar: AcademicCalendar | null,
   sync: SyncAttempt,
-  freshness: AgentContext['freshness']
+  freshness: AgentContext['freshness'],
+  health: HealthSnapshot | null,
+  now: Date
 ): string[] {
   const warnings: string[] = [];
 
@@ -558,6 +571,8 @@ function buildWarnings(
   } else if (calendar.available === false || (calendar.errors?.length ?? 0) > 0) {
     warnings.push('academic-calendar.json reports errors; holiday checks may be incomplete.');
   }
+  // 定期ジョブ（systemd タイマー）の失敗・停止。toyo:health が output/toyo/health.json に書く
+  warnings.push(...healthWarnings(health, now));
 
   return warnings;
 }
@@ -634,9 +649,10 @@ async function buildContext(options: CliOptions): Promise<AgentContext> {
     );
   }
 
-  const [enrollment, calendar] = await Promise.all([
+  const [enrollment, calendar, health] = await Promise.all([
     readJsonFile<EnrollmentData>(jsonOutputPath),
     readJsonFile<AcademicCalendar>(academicCalendarPath),
+    loadHealthSnapshot(),
   ]);
   const ageMinutes = minutesSince(summary.generatedAt, now);
   const freshness = {
@@ -716,7 +732,7 @@ async function buildContext(options: CliOptions): Promise<AgentContext> {
     agentNotes: buildAgentNotes(),
   };
 
-  context.warnings = buildWarnings(summary, enrollment, calendar, sync, freshness);
+  context.warnings = buildWarnings(summary, enrollment, calendar, sync, freshness, health, now);
   return context;
 }
 
@@ -968,11 +984,14 @@ export async function main(): Promise<void> {
   const markdown = buildMarkdown(context);
   await writeContext(context, markdown);
 
-  if (options.format === 'json') {
-    console.log(JSON.stringify(context, null, 2));
-  } else {
-    console.log(markdown);
+  if (options.print) {
+    console.log(options.format === 'json' ? JSON.stringify(context, null, 2) : markdown);
+    return;
   }
+  // 既定は journal を汚さない 1 行サマリ（全文は --print、または output/toyo/agent-context.md を読む）
+  console.log(
+    `[context] ${formatJst()} JST today=${context.today.classes.length} tomorrow=${context.tomorrow.classes.length} warnings=${context.warnings.length}`
+  );
 }
 
 if (require.main === module) {

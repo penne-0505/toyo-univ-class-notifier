@@ -9,3 +9,5 @@ Environment=PATH=/home/penne/.volta/bin:/usr/bin:/bin
 ExecStart=/usr/bin/flock -w 900 /tmp/toyo-fetch.lock /usr/bin/env npm run toyo:daily
 # 全取得は 600 秒を超えうるため watch より長く取る
 TimeoutStartSec=1800
+# 成否を記録し、連続失敗が閾値に達したら通知する（失敗しても本体の結果は変えないので `-` 付き）
+ExecStopPost=-/usr/bin/bash deploy/toyo-health-hook.sh daily

@@ -25,7 +25,8 @@
     "toyo:grading-rules": "tsx ./scripts/toyo-grading-rules.ts",
     "toyo:publish": "tsx ./scripts/toyo-publish.ts",
     "toyo:watch": "tsx ./scripts/toyo-watch.ts",
-    "toyo:daily": "tsx ./scripts/toyo-daily.ts"
+    "toyo:daily": "tsx ./scripts/toyo-daily.ts",
+    "toyo:health": "tsx ./scripts/toyo-health.ts"
   },
   "keywords": [],
   "author": "",

@@ -48,7 +48,8 @@ npm run toyo:export-enrollment
 npm run toyo:syllabus -- --course-code <授業コード>
 npm run toyo:calendar      # 祝日・学年暦のみ更新
 npm run toyo:announcements # ACEお知らせのみ更新
-npm run toyo:context       # エージェント用の圧縮コンテキストを生成
+npm run toyo:context       # エージェント用の圧縮コンテキストを生成（標準出力は 1 行サマリ、全文は --print）
+npm run toyo:health -- status   # 定期ジョブの失敗状況（アラート中なら終了コード 1）
 npm run toyo:candidates    # 履修登録画面から登録可能科目を取得（--syllabus でシラバスも）
 npm run toyo:credits       # 単位数集計表・履修修得科目を取得
 npm run toyo:register      # 履修登録の dry-run / --exec で送信（--period add --max-credits N --skip-missing）
@@ -68,7 +69,7 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 - `toyo:syllabus:seed`: `registration-candidates.json` の `candidates[].syllabus` から登録中科目のシラバスキャッシュを一括生成する（時間割検索を経由しない。既存ファイルは `--force` で上書き）。学期切替直後に `toyo:candidates` を実行した後で使う。
 - `toyo:calendar`: 内閣府CSVから祝日データを取得する。
 - `toyo:announcements`: ToyoNet-ACEのお知らせ（休講・補講・教室変更等）を取得する。
-- `toyo:context`: `summary.json` が古い場合は `toyo:sync` を試み、今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。既存出力だけで作る場合は `--no-sync` を付ける。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
+- `toyo:context`: `summary.json` が古い場合は `toyo:sync` を試み、今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。既存出力だけで作る場合は `--no-sync` を付ける。標準出力は 1 行サマリ（`[context] <JST> today=n tomorrow=m warnings=k`）で、全文は `--print`（`--format json` と併用可）。定期ジョブが失敗中・停止中なら Warnings に載る（「失敗の検知と通知」参照）。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
 - `toyo:schedule`: `academic-schedule.json` を読むだけ。`--date 2026-10-07` で任意の日の進行中の期間と各曜日の第N回を確認できる。祝日（`academic-calendar.json`）と `noClassDays` は授業日から除き、`makeupDays` は振替曜日として数える。
 - `toyo:grading-rules`: シラバス本文から正規表現で配分・足切りを抽出する下書き生成。抽出結果は必ず `sourceText` と見比べて直し `reviewed: true` にする。配分合計が 100 にならない科目は `warnings` に入る。
 
@@ -121,6 +122,8 @@ Discord bot ← output/ を読むだけ（上記と独立）
 - watch・daily・coursework は `flock /tmp/toyo-fetch.lock` で排他（Playwright セッションは同時に 1 つ）。coursework は取得後に summary.json も再生成し（`--no-summary` で省略）、各授業・課題に `coursework`（提出済/未提出数・次の受付開始）、トップレベルに `courseworkSchedule`（今後 14 日、受付開始待ちを含む）を載せる。導入・確認・停止は `deploy/README.md`。
 - 注意: watch が「変化なし」の間は summary.json の `generatedAt` が古いままになる。`toyo:context` の既定 30 分 stale 判定を使う場合は `--no-sync` を付けても警告が出うる。鮮度は `fetchedAt` の新しさではなく、watch の最終確認時刻（`state/watch-state.json` の `lastSuccessAt`）で見ること。
 - 注意: `registration-data.json` には学籍番号・氏名が含まれ、そのまま push される（private repo 前提）。
+- journal を汚さないため、定期実行されるコマンドの標準出力は 1 行サマリにしている（`toyo:context` は `[context] ...`、`toyo:coursework` は `[coursework] ...`、`toyo:sync` は `[sync] ...`）。科目ごとの内訳は `toyo:coursework -- --verbose`、context の全文は `--print`。
+- 失敗検知と通知は次節「失敗の検知と通知」。
 
 ### Worker 経由の読み方（クラウドのエージェント向け）
 
@@ -130,6 +133,52 @@ GitHub を読めないエージェントのため、`toyo:publish` は変化し�
 - 読み方: `curl -H "Authorization: Bearer $READ_KEY" $URL/v1/context`（まずこれ）。`/v1/meta`、`/v1/assignments?within=7d`、`/v1/today`、`/v1/files/{path}` など。科目単位なら `/v1/courses`（一覧）と `/v1/courses/{授業コード|ACE courseId|科目名}`（時間割・第N回・シラバス・成績ルール・提出状況・課題・お知らせを 1 回で）。`/v1/assignments?within=14d&includeWaiting=1` は受付開始待ちの小テストも混ぜ、各要素に配点・足切り・提出数（`course`）を付ける。一覧と鍵の扱い・ローテーションは `worker/README.md`。
 - 鮮度は GitHub と同じ読み方: `/v1/meta` の `publishedAt` が 24 時間超なら取得側停止。`updatedAt` は最後に meta を PUT した時刻。
 - 読み取りキーはエージェント側、書き込みキーはこのマシンの `.env.local` だけに置く。
+
+### 失敗の検知と通知
+
+定期ジョブの失敗が「ログに残るだけ」で気づかれないのを防ぐ仕組み（2026-10-07 に coursework が 7 時間連続で失敗した事故が発端）。各 service の `ExecStopPost`（`deploy/toyo-health-hook.sh`）が systemd の `$SERVICE_RESULT` / `$EXIT_STATUS` を見て `npm run --silent toyo:health -- record <job> success|failure` を呼ぶ。`watch` が他ジョブ実行中でスキップした場合（`EXIT_STATUS=75`）は記録しない。`ExecStopPost` は `-` 付きなので、記録の失敗で本体の結果は変わらない。
+
+| ジョブ | 連続失敗でアラートする閾値 | context で「古い」とみなす最終成功からの経過 |
+| --- | --- | --- |
+| `watch`（5 分） | 3 回（約 15 分） | 30 分 |
+| `coursework`（毎時） | 2 回（約 2 時間） | 3 時間 |
+| `daily`（04:30） | 1 回 | 30 時間 |
+
+- 閾値は `scripts/lib/toyo-health.ts` の定数（`ALERT_THRESHOLDS` / `STALE_AFTER_MS` / `REALERT_AFTER_MS`）。
+- 通知は閾値に達した時点で 1 回だけ。以後は失敗が続いても送らず、通知から 6 時間たっても失敗中なら再通知する。失敗中に成功すると「回復」を 1 回送り、アラートを解除する。
+- エラー文は `--error` が無ければ `journalctl --user -u toyo-<job>.service` の今回の実行分から `error|timeout|failed|econn|exception|exceeded` を含む行の最後 3 行（500 字まで）。学籍番号らしき 10 桁の数字は `**********` に伏せる（授業コードも 10 桁なので伏せられる）。
+- 状態: `state/health.json`（正本。ジョブごとに `lastRunAt` / `lastSuccessAt` / `lastFailureAt` / `consecutiveFailures` / `lastError` / `alerting` / `alertedAt` / `failingSince`）。公開用の写しは `output/toyo/health.json`（`{ generatedAt, jobs, alerting }`）。
+- 遷移（アラート・再通知・回復）のたびに `output/toyo/health.json` を Worker へ直接 PUT する（失敗は無視。GitHub へは次の publish で載る。`meta.json` の `health` にも毎回入る）。
+
+#### 送り先の設定（`.env.local`）
+
+複数設定すれば全部に送る。何も設定しなければ `notify-send`（systemd 下では `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID/bus` を補う）、それも失敗したら標準エラー（= journal）に出すだけ。
+
+| 変数 | 送り先 |
+| --- | --- |
+| `TOYO_ALERT_DISCORD_WEBHOOK` | Discord webhook URL。`{ content }` を POST（2000 字まで） |
+| `TOYO_ALERT_NTFY_TOPIC`（＋任意で `TOYO_ALERT_NTFY_SERVER`、既定 `https://ntfy.sh`） | ntfy。`Title` ヘッダ、アラートは `Priority: high`。公開サーバーに送るので、本文から URL・長いトークン・10 桁数字を落とす。トピック名は事実上のパスワードなので推測されにくい名前にする |
+
+```bash
+npm run toyo:health -- test-notify   # 設定した全送り先へテスト通知を 1 回送る
+```
+
+#### status の見方
+
+```bash
+npm run toyo:health -- status        # アラート中のジョブがあれば終了コード 1
+[ok   ] watch      | 最終成功 03:30 | 最終実行 03:30 | 連続失敗 0/3
+[ALERT] coursework | 最終成功 20:21 | 最終実行 03:20 | 連続失敗 7/2 | 通知済み 22:20 | エラー: ...
+```
+
+- 行頭: `ok`（正常）/ `ALERT`（アラート中）/ `STALE`（アラートではないが最終成功が閾値より古い）。
+- `連続失敗 n/m` は現在の連続失敗数 / アラート閾値。日付が今日でなければ `MM/DD HH:mm`（JST）。
+- 原因を直したら、次の定期実行（または `systemctl --user start toyo-<job>.service`）の成功で自動的に回復する。`state/health.json` を直接消してもよい。
+
+#### 劣化の可視化
+
+- `toyo:context`: アラート中のジョブ、または最終成功が上表の目安より古いジョブを Warnings / JSON の `warnings` に載せる（例: 「toyo-coursework が 2026-10-07 20:22 から失敗中。今日・明日・提出状況が古い可能性」）。
+- Worker: `GET /v1/health`（認証不要）は `{ ok, updatedAt, degraded }` だけを返す（ジョブ名・詳細は出さない）。`/v1/meta` には `health` が入り、認証済み GET の応答には劣化中だけ `X-Toyo-Degraded: 1` ヘッダが付く。
 
 ## 同期後に確認するファイル
 

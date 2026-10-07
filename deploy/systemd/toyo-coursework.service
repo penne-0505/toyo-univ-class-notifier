@@ -9,3 +9,5 @@ Environment=PATH=/home/penne/.volta/bin:/usr/bin:/bin
 # coursework は取得後に summary.json も再生成する。context → publish までを 1 ユニットで流す
 ExecStart=/usr/bin/flock -w 600 /tmp/toyo-fetch.lock /usr/bin/bash -c 'npm run toyo:coursework && npm run toyo:context -- --no-sync && npm run toyo:publish'
 TimeoutStartSec=900
+# 成否を記録し、連続失敗が閾値に達したら通知する（失敗しても本体の結果は変えないので `-` 付き）
+ExecStopPost=-/usr/bin/bash deploy/toyo-health-hook.sh coursework
