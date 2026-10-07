@@ -7,6 +7,12 @@
  * 対象: 秋学期の登録科目 / add-registration-plan.json の科目 / 春学期の登録科目（参考）。
  * 既存ファイルで reviewed: true の科目は上書きしない（人手で直した内容を守る）。
  *
+ * シラバス本文の入力は次の順（授業コードで引く。先に見つかったものを使う）:
+ *   1. output/toyo/syllabus/<授業コード>.json（登録科目のキャッシュ）
+ *   2. output/toyo/syllabus-pool/<授業コード>.json（登録可能科目の取得で貯めた本文）
+ *   3. 候補ファイル（registration-candidates*.json。追加登録期間の取得には本文が無いので、本文のある方だけ）
+ * 授業コードが確定しない科目（追加登録プランの scheduleCd しか分からないもの）は下書きを作らず「スキップ」と出す。
+ *
  * Usage:
  *   npm run toyo:grading-rules
  *   npm run toyo:grading-rules -- --dry-run     # 書き込まず結果だけ表示
@@ -14,21 +20,36 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { jsonOutputPath, outputDir, type EnrollmentData } from './lib/toyo-enrollment';
+import { inferScheduleCd } from './lib/course-code';
+import { readPool } from './lib/syllabus-pool';
+import { findSyllabus, readSyllabusCache } from './lib/syllabus-cache';
+import { type EnrollmentData } from './lib/toyo-enrollment';
 import {
   draftGradingRule,
   gradingRulesPath,
   type GradingRule,
   type GradingRulesFile,
 } from './lib/toyo-grading-rules';
+import { outputDir, registrationDataPath } from './lib/toyo-paths';
 
-type Candidate = {
-  scheduleCd: string;
-  courseName: string;
-  syllabus?: { courseCode?: string; grading?: string };
+/** 授業コード・scheduleCd・シラバス本文の出どころになる 1 件（pool の候補、候補ファイルの候補を同じ形にしたもの）。 */
+type Source = {
+  origin: string;
+  scheduleCd: string | null;
+  courseName: string | null;
+  courseCode: string | null;
+  grading: string | null;
+};
+
+type CandidateLike = {
+  scheduleCd?: string;
+  courseName?: string;
+  syllabus?: { courseCode?: string; grading?: string } | null;
 };
 
 type PlanItem = { scheduleCd: string; name: string };
+
+const CANDIDATE_FILES = ['registration-candidates.json', 'registration-candidates.regular.json', 'registration-candidates.add.json'];
 
 async function readJson<T>(filePath: string): Promise<T | null> {
   try {
@@ -39,37 +60,56 @@ async function readJson<T>(filePath: string): Promise<T | null> {
   }
 }
 
-/** scheduleCd = '34' + 授業コード先頭7桁 + '0-' + 授業コード末尾3桁 */
-function scheduleCdFromCourseCode(courseCode: string): string {
-  return `34${courseCode.slice(0, 7)}0-${courseCode.slice(7)}`;
+function fromCandidate(origin: string, c: CandidateLike): Source {
+  return {
+    origin,
+    scheduleCd: c.scheduleCd ?? null,
+    courseName: c.courseName ?? null,
+    courseCode: c.syllabus?.courseCode ?? null,
+    grading: c.syllabus?.grading || null,
+  };
 }
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
-  const enrollment = await readJson<EnrollmentData>(jsonOutputPath);
-  const candidatesFile = await readJson<{ candidates: Candidate[] }>(
-    path.join(outputDir, 'registration-candidates.json')
-  );
+  const enrollment = await readJson<EnrollmentData>(registrationDataPath);
   const plan = (await readJson<PlanItem[]>(path.join(outputDir, 'add-registration-plan.json'))) ?? [];
   const existing = await readJson<GradingRulesFile>(gradingRulesPath);
   if (!enrollment) throw new Error('registration-data.json が見つかりません。');
 
-  const candidates = candidatesFile?.candidates ?? [];
-  const candidateByScheduleCd = new Map(candidates.map((c) => [c.scheduleCd, c]));
-  const candidateByCourseCode = new Map(
-    candidates.filter((c) => c.syllabus?.courseCode).map((c) => [c.syllabus!.courseCode!, c])
-  );
+  const syllabusCache = await readSyllabusCache();
+  const pool = await readPool();
+  const candidateSources: Source[] = [];
+  for (const name of CANDIDATE_FILES) {
+    const file = await readJson<{ candidates?: CandidateLike[] }>(path.join(outputDir, name));
+    for (const c of file?.candidates ?? []) candidateSources.push(fromCandidate(name, c));
+  }
+  const poolSources = pool.map((entry) => fromCandidate('syllabus-pool', { ...entry.candidate, syllabus: { ...entry.candidate.syllabus, courseCode: entry.courseCode } }));
+  // 授業コード・scheduleCd を引く対象。本文（grading）を持つものを先にする
+  const lookupSources = [...poolSources, ...candidateSources].sort((a, b) => Number(Boolean(b.grading)) - Number(Boolean(a.grading)));
+
+  /** 授業コードで本文を探す: キャッシュ → pool → 候補ファイル */
+  const gradingFor = (courseCode: string, academicYear?: string): { text: string | null; scheduleCd: string | null } => {
+    const record = findSyllabus(syllabusCache, courseCode, academicYear) ?? findSyllabus(syllabusCache, courseCode);
+    const hit = lookupSources.find((s) => s.courseCode === courseCode);
+    const scheduleCd = hit?.scheduleCd ?? null;
+    if (record?.grading) return { text: record.grading, scheduleCd };
+    const withText = lookupSources.find((s) => s.courseCode === courseCode && s.grading);
+    return { text: withText?.grading ?? null, scheduleCd: withText?.scheduleCd ?? scheduleCd };
+  };
 
   const drafts: GradingRule[] = [];
   const seen = new Set<string>();
+  const skipped: string[] = [];
   const push = (rule: GradingRule): void => {
     if (seen.has(rule.courseCode)) return;
     seen.add(rule.courseCode);
     drafts.push(rule);
   };
+  const existingByCode = new Map((existing?.courses ?? []).map((c) => [c.courseCode, c]));
   const missing = (courseCode: string, scheduleCd: string | null, courseName: string, semester: GradingRule['semester'], enrollmentKind: GradingRule['enrollment'], reason: string): GradingRule => ({
     courseCode,
-    scheduleCd,
+    scheduleCd: scheduleCd ?? existingByCode.get(courseCode)?.scheduleCd ?? null,
     courseName,
     semester,
     enrollment: enrollmentKind,
@@ -81,50 +121,50 @@ async function main(): Promise<void> {
     warnings: [reason],
   });
 
-  // 1. 秋学期の登録科目（候補一覧のシラバスから。授業コード一致 → scheduleCd 式の順で探す）
+  // 1. 秋学期の登録科目
   for (const course of enrollment.courses.filter((c) => c.semesterLabel === '秋学期')) {
-    const candidate =
-      candidateByCourseCode.get(course.courseCode) ??
-      candidateByScheduleCd.get(scheduleCdFromCourseCode(course.courseCode));
-    const grading = candidate?.syllabus?.grading;
-    if (!candidate || !grading) {
-      push(missing(course.courseCode, candidate?.scheduleCd ?? null, course.courseName, '秋学期', 'registered', 'registration-candidates.json にシラバス本文が無い。toyo:candidates -- --syllabus を実行すること。'));
+    const found = gradingFor(course.courseCode, enrollment.academicYear);
+    if (!found.text) {
+      push(missing(course.courseCode, found.scheduleCd, course.courseName, '秋学期', 'registered', 'シラバス本文が無い（output/toyo/syllabus・syllabus-pool・候補ファイルのどれにも）。toyo:daily が補完するか、toyo:syllabus を実行すること。'));
       continue;
     }
-    push(draftGradingRule({ courseCode: course.courseCode, scheduleCd: candidate.scheduleCd, courseName: course.courseName, semester: '秋学期', enrollment: 'registered', grading }));
+    const scheduleCd = found.scheduleCd ?? existingByCode.get(course.courseCode)?.scheduleCd ?? inferScheduleCd(course.courseCode);
+    push(draftGradingRule({ courseCode: course.courseCode, scheduleCd, courseName: course.courseName, semester: '秋学期', enrollment: 'registered', grading: found.text }));
   }
 
-  // 2. 追加登録プランの科目
+  // 2. 追加登録プランの科目: scheduleCd しか分からない。授業コードは候補（pool / 候補ファイル）の本文から確定できたものだけ。
   for (const item of plan) {
-    const candidate = candidateByScheduleCd.get(item.scheduleCd);
-    const courseCode = candidate?.syllabus?.courseCode ?? item.scheduleCd;
-    const grading = candidate?.syllabus?.grading;
-    if (!candidate || !grading) {
-      push(missing(courseCode, item.scheduleCd, item.name, '秋学期', 'add-plan', 'registration-candidates.json にシラバス本文が無い。'));
+    const hit = lookupSources.find((s) => s.scheduleCd === item.scheduleCd && s.courseCode);
+    if (!hit?.courseCode) {
+      skipped.push(`${item.name} (${item.scheduleCd})`);
       continue;
     }
-    push(draftGradingRule({ courseCode, scheduleCd: item.scheduleCd, courseName: candidate.courseName, semester: '秋学期', enrollment: 'add-plan', grading }));
+    const found = gradingFor(hit.courseCode);
+    if (!found.text) {
+      push(missing(hit.courseCode, item.scheduleCd, item.name, '秋学期', 'add-plan', 'シラバス本文が無い。'));
+      continue;
+    }
+    push(draftGradingRule({ courseCode: hit.courseCode, scheduleCd: item.scheduleCd, courseName: hit.courseName ?? item.name, semester: '秋学期', enrollment: 'add-plan', grading: found.text }));
   }
 
   // 3. 春学期の登録科目（参考）
   for (const course of enrollment.courses.filter((c) => c.semesterLabel === '春学期')) {
-    const record = await readJson<{ syllabus?: { grading?: string } }>(
-      path.join(outputDir, 'syllabus', `${course.courseCode}.json`)
-    );
-    const grading = record?.syllabus?.grading;
-    const scheduleCd = scheduleCdFromCourseCode(course.courseCode);
-    if (!grading) {
-      push(missing(course.courseCode, scheduleCd, course.courseName, '春学期', 'reference', `output/toyo/syllabus/${course.courseCode}.json が無い。`));
+    const found = gradingFor(course.courseCode, enrollment.academicYear);
+    const scheduleCd = found.scheduleCd ?? existingByCode.get(course.courseCode)?.scheduleCd ?? inferScheduleCd(course.courseCode);
+    if (!found.text) {
+      push(missing(course.courseCode, scheduleCd, course.courseName, '春学期', 'reference', `シラバス本文が無い（output/toyo/syllabus/${course.courseCode}.json）。`));
       continue;
     }
-    push(draftGradingRule({ courseCode: course.courseCode, scheduleCd, courseName: course.courseName, semester: '春学期', enrollment: 'reference', grading }));
+    push(draftGradingRule({ courseCode: course.courseCode, scheduleCd, courseName: course.courseName, semester: '春学期', enrollment: 'reference', grading: found.text }));
   }
 
-  // reviewed: true の既存科目は上書きしない。対象外の既存科目はそのまま残す。
-  const existingByCode = new Map((existing?.courses ?? []).map((c) => [c.courseCode, c]));
+  // reviewed: true の既存科目は上書きしない。入力が欠けて空の下書きしか作れない場合も、既存の内容を空で上書きしない。
+  // 対象外の既存科目はそのまま残す。
   const merged: GradingRule[] = drafts.map((draft) => {
     const previous = existingByCode.get(draft.courseCode);
-    return previous?.reviewed ? previous : draft;
+    if (previous?.reviewed) return previous;
+    if (previous && draft.sourceText === '' && (previous.components.length > 0 || previous.cutoffs.length > 0)) return previous;
+    return draft;
   });
   for (const previous of existing?.courses ?? []) {
     if (!seen.has(previous.courseCode)) merged.push(previous);
@@ -147,6 +187,9 @@ async function main(): Promise<void> {
     const mark = rule.reviewed ? 'reviewed' : 'draft   ';
     console.log(`  [${mark}] ${rule.semester} ${rule.courseName} (${rule.courseCode}) 配分${rule.components.length}件 足切り${rule.cutoffs.length}件 warnings=${rule.warnings.length}`);
     for (const warning of rule.warnings) console.log(`      ! ${warning}`);
+  }
+  for (const line of skipped) {
+    console.log(`  [スキップ] ${line}: 授業コードが確定しない（候補に本文が無く scheduleCd しか分からない）ため下書きを作らない`);
   }
 }
 

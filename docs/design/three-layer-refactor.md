@@ -119,6 +119,13 @@ npm scripts と systemd ユニットの名前は変えない。
      - シラバスのファイル名の整形（`safeStem` / `safeFileStem` / `syllabusFileStem` / `poolFileName`）が 4 か所に複製されている。授業コードが英数字だけなら結果は同じ。
    - 実装中に決めたこと: `course-index.json` に `intensive`（集中講義は `slots` が空）、`currentSemester`、`academicYear` を足した。`scripts/lib/toyo-paths.ts`（repoRoot / outputDir / dataDir）を切り出した（`toyo-academic-schedule.ts` が `toyo-enrollment.ts` 経由で playwright を読み込んでいたため）。`scripts/dev/course-index.test.ts` が、`scripts/build/` に playwright / `lib/toyo` / `toyo-enrollment` の import が無いことと、`course-index` を読み込んでも playwright が読み込まれないことを検査する（メモにある typecheck 用 lint の先取り）。
 2. **組み立て層の純化と改名**: `buildSummary` を純粋関数にし、summary の中の取得呼び出しを削除。`toyo-context.ts` を分割し、自動 sync を削除。summary の置き場所を移し、Worker にフォールバックを入れてデプロイ。突き合わせで差分を確認。
+   - **完了（本体 3752cb2、Worker bace5c5、評価ルール生成の入力切替など周辺の修正はこのメモを更新したコミット、2026-10-08）**。
+   - 実装中に決めたこと: `scripts/build/` は summary・context・context-markdown・course-lookup（課題・お知らせ・コンテンツを index で授業コードに引く resolver）。ファイルの読み書きは CLI 側（`toyo-build.ts` / `toyo-context.ts` / `toyo-build-index.ts`）。純粋性は `scripts/dev/course-index.test.ts` が `scripts/build/` 全体で検査する（値の import は Node 標準・同ディレクトリ・純粋な `lib/` に限る、`fetch(` 禁止、読み込んでも playwright が読み込まれない）。`import type` は実行時に消えるので許す。
+   - 純粋化のため `lib/` から切り出したもの: `lib/coursework-model.ts`（coursework の型と brief / schedule の計算）、`lib/syllabus-cache.ts`（シラバスのキャッシュの型と読み出し）、`lib/course-code.ts`（`inferScheduleCd` と `syllabusFileStem`。scheduleCd の推定式とシラバスのファイル名整形は 1 か所になった）。`healthWarnings` は呼び出し側（`toyo-context.ts`）が計算して `ContextInputs.healthWarnings` で渡す。
+   - summary の全体一覧（`upcomingAssignments` / `courseContents` / `announcements`）の各項目に、index で引いた授業コード `courseCode` を付けた。引けないもの（履修外の ACE コース、全学のお知らせなど）は `null`（科目不明）で残す。お知らせは `courseNameHint` を引き、hint が無いときだけタイトルに科目名のキーが丸ごと（3 文字以上）含まれるものを引く。先頭 4 文字の部分一致はやめた。
+   - agent-context から `sync` フィールド（と Markdown の `- sync:` 行）を削除した。`--sync` は廃止（エラー）、`--no-sync` は受け付けて無視する。
+   - 取得と build の線引き: `toyo:sync` は ACE 各取得の不調では失敗にしない（履修登録確認表の取得が落ちたときだけ失敗）。`toyo:daily` のシラバス補完の段は警告にとどめ成功扱い。`toyo:coursework` / `toyo:sync` の `--no-summary` は `--no-build` になった（daily は最後にまとめて build するため付ける）。
+   - 残した課題: `toyo-coursework.service` の ExecStart に残っている `toyo:context -- --no-sync` は、`toyo:coursework` が `toyo:build` を呼ぶようになったため冗長（無害）。ユニットを触るときに外してよい。Worker の旧パスのフォールバックと publish の `LEGACY_PATTERNS` は 2026-10 以降に削除する。
 3. **ディレクトリの移動**: 機械的な移動と import の修正のみ。挙動は変えない。
 
 各コミットの後にタイマーを 1 周させて health が success であることを確認する。
