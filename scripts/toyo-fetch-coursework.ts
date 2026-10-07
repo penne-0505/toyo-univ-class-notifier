@@ -11,12 +11,14 @@ import {
 } from './lib/toyonet-ace';
 import { announcementsOutputPath, type AnnouncementCollectionResult } from './lib/toyo-announcements';
 import { buildDiscordSummary, writeDiscordSummary } from './lib/toyo-summary';
+import { buildAndWriteCourseIndex, summarizeCourseIndex } from './toyo-build-index';
 
 /**
  * ACE のコース別提出状況（レポート / 小テスト / アンケート / 成績 / 提出記録）を取得して
  * output/toyo/toyonet-ace-coursework.json に保存する。
  * 取得後、ディスク上の ACE データから summary.json を再生成する（--no-summary で省略）。
  * 再生成しないと toyo:context が coursework を反映できない。
+ * 最後に course-index.json も作り直す（純粋処理）。ACE への登録反映の有無が毎時 index に載る。
  */
 
 async function readJson<T>(file: string): Promise<T | null> {
@@ -80,6 +82,12 @@ export async function main(): Promise<void> {
   }
   if (!noSummary) {
     await rebuildSummary();
+  }
+  try {
+    console.log(summarizeCourseIndex(await buildAndWriteCourseIndex()));
+  } catch (error) {
+    // index は派生物。作れなくても取得結果の publish は止めない（次の周で作り直される）
+    console.error(`[coursework] course-index.json を作れませんでした: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

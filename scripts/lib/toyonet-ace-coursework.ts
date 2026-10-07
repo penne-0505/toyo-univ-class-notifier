@@ -8,7 +8,8 @@ import {
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
 } from './toyo';
-import { normalizeCourseKey, toJstIso } from './toyonet-ace';
+import { toJstIso } from './toyonet-ace';
+import { courseKey } from './course-key';
 
 /**
  * ToyoNet-ACE（manaba）のコース別「提出状況」の収集。
@@ -291,8 +292,8 @@ function matchRegisteredCourse(
     const hit = registered.find((c) => c.courseCode.toUpperCase() === code.toUpperCase());
     if (hit) return hit;
   }
-  const key = normalizeCourseKey(aceName);
-  return registered.find((c) => normalizeCourseKey(c.courseName) === key) ?? null;
+  const key = courseKey(aceName);
+  return registered.find((c) => courseKey(c.courseName) === key) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -544,10 +545,10 @@ export function findCourseworkForAssignment(
     const byId = result.courses.find((c) => c.courseId === m[1]);
     if (byId) return byId;
   }
-  const key = normalizeCourseKey(courseName);
+  const key = courseKey(courseName);
   return (
     result.courses.find(
-      (c) => normalizeCourseKey(c.courseName) === key || (c.aceListName !== null && normalizeCourseKey(c.aceListName) === key)
+      (c) => courseKey(c.courseName) === key || (c.aceListName !== null && courseKey(c.aceListName) === key)
     ) ?? null
   );
 }

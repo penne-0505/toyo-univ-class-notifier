@@ -19,16 +19,36 @@ const HEALTH_REL = 'output/toyo/health.json';
 /**
  * 公開してよいパスは allowlist だけ。除外リストには頼らない。
  *   output/toyo/**, output/bot/summary.json, data/**
+ * allowlist の内側でも、配信しないと決めたものは NOT_PUBLISHED_PATTERNS で明示的に弾く。
+ *   - syllabus-pool/: 約 140 科目分のシラバス本文。受け手には不要（登録中の科目は syllabus/ に出る）
+ *   - registration-candidates.<regular|add>.json: 期間別の候補ファイル（最新版は registration-candidates.json）
  */
 const ALLOWED_PATTERNS: RegExp[] = [/^output\/toyo\/.+/, /^output\/bot\/summary\.json$/, /^data\/.+/];
+const NOT_PUBLISHED_PATTERNS: RegExp[] = [
+  /^output\/toyo\/syllabus-pool\//,
+  /^output\/toyo\/registration-candidates\.(?:regular|add)\.json$/,
+];
 const FORBIDDEN_SEGMENTS = /^(?:artifacts|playwright|node_modules|\.git|\.env.*)$/;
 
-function assertAllowed(rel: string): void {
+function isNotPublished(rel: string): boolean {
+  return NOT_PUBLISHED_PATTERNS.some((p) => p.test(rel));
+}
+
+/** toyo-data / Worker の管理対象のパスか（削除の反映でも使う）。 */
+function assertManaged(rel: string): void {
   const ok =
     ALLOWED_PATTERNS.some((p) => p.test(rel)) &&
     !rel.split('/').some((segment) => FORBIDDEN_SEGMENTS.test(segment));
   if (!ok) {
     throw new Error(`Refusing to publish path outside allowlist: ${rel}`);
+  }
+}
+
+/** 配信（コピー・PUT）してよいパスか。管理対象のうち NOT_PUBLISHED でないもの。 */
+function assertAllowed(rel: string): void {
+  assertManaged(rel);
+  if (isNotPublished(rel)) {
+    throw new Error(`Refusing to publish path excluded from publishing: ${rel}`);
   }
 }
 
@@ -43,6 +63,7 @@ const SOURCE_COMMANDS: Array<[RegExp, string]> = [
   [/^output\/toyo\/credit-summary\./, 'toyo:credits'],
   [/^output\/toyo\/lottery-results\./, 'toyo:lottery'],
   [/^output\/toyo\/registration-candidates\.json$/, 'toyo:candidates'],
+  [/^output\/toyo\/course-index\.json$/, 'toyo:build:index'],
   [/^output\/toyo\/agent-context\./, 'toyo:context'],
   [/^output\/toyo\/health\.json$/, 'toyo:health'],
   [/^output\/toyo\/syllabus\//, 'toyo:syllabus'],
@@ -124,7 +145,7 @@ async function pushToApi(args: {
   }
   for (const rel of [...delSet].sort()) {
     try {
-      assertAllowed(rel);
+      assertManaged(rel);
       await request('DELETE', urlFor(rel));
       result.deleted++;
     } catch (error) {
@@ -184,6 +205,8 @@ async function collectSources(includeCandidates: boolean): Promise<Map<string, s
     /* summary 未生成 */
   }
   if (!includeCandidates) sources.delete(CANDIDATES_REL);
+  // 配信しないと決めたもの（syllabus-pool、期間別の候補ファイル）はここで明示的に外す
+  for (const rel of [...sources.keys()]) if (isNotPublished(rel)) sources.delete(rel);
   for (const rel of sources.keys()) assertAllowed(rel);
   return sources;
 }
@@ -274,7 +297,7 @@ export async function publish(options: Options): Promise<PublishResult> {
   for (const [rel, abs] of managed) {
     if (sources.has(rel)) continue;
     if (rel === CANDIDATES_REL && !options.includeCandidates) continue;
-    assertAllowed(rel);
+    assertManaged(rel); // 配信対象外のパスが toyo-data に残っていれば、ここで削除として反映される
     deletedFiles.push(rel);
     if (!options.dryRun) await fs.rm(abs);
   }

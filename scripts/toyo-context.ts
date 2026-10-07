@@ -28,6 +28,8 @@ import {
 import { findGradingRule, gradingRulesPath, type GradingRule } from './lib/toyo-grading-rules';
 import { healthWarnings, loadHealthSnapshot, type HealthSnapshot } from './lib/toyo-health';
 import { formatJst } from './lib/toyo-normalize';
+import { type CourseIndex } from './build/course-index';
+import { courseIndexOutputPath } from './toyo-build-index';
 
 type OutputFormat = 'markdown' | 'json';
 
@@ -529,6 +531,7 @@ function buildWarnings(
   sync: SyncAttempt,
   freshness: AgentContext['freshness'],
   health: HealthSnapshot | null,
+  courseIndex: CourseIndex | null,
   now: Date
 ): string[] {
   const warnings: string[] = [];
@@ -573,6 +576,10 @@ function buildWarnings(
   }
   // 定期ジョブ（systemd タイマー）の失敗・停止。toyo:health が output/toyo/health.json に書く
   warnings.push(...healthWarnings(health, now));
+  // 科目の対応表（course-index.json）が見つけた欠け。今学期の科目だけが warnings を持つ
+  for (const course of courseIndex?.courses ?? []) {
+    for (const warning of course.warnings) warnings.push(`${course.names.portal}: ${warning}`);
+  }
 
   return warnings;
 }
@@ -649,10 +656,11 @@ async function buildContext(options: CliOptions): Promise<AgentContext> {
     );
   }
 
-  const [enrollment, calendar, health] = await Promise.all([
+  const [enrollment, calendar, health, courseIndex] = await Promise.all([
     readJsonFile<EnrollmentData>(jsonOutputPath),
     readJsonFile<AcademicCalendar>(academicCalendarPath),
     loadHealthSnapshot(),
+    readJsonFile<CourseIndex>(courseIndexOutputPath),
   ]);
   const ageMinutes = minutesSince(summary.generatedAt, now);
   const freshness = {
@@ -732,7 +740,7 @@ async function buildContext(options: CliOptions): Promise<AgentContext> {
     agentNotes: buildAgentNotes(),
   };
 
-  context.warnings = buildWarnings(summary, enrollment, calendar, sync, freshness, health, now);
+  context.warnings = buildWarnings(summary, enrollment, calendar, sync, freshness, health, courseIndex, now);
   return context;
 }
 

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { type Page } from 'playwright';
 import { outputDir, repoRoot } from './toyo-enrollment';
+import { courseKey } from './course-key';
 import {
   collectPortalSnapshot,
   getOrCreatePage,
@@ -117,10 +118,6 @@ export function toJstIso(raw: string): string | null {
       ? normalized
       : `${normalized}:00`;
   return `${normalizedWithSeconds.replace(' ', 'T')}+09:00`;
-}
-
-export function normalizeCourseKey(value: string): string {
-  return normalizeText(value).normalize('NFKC').replace(/[　\s]+/g, '').toUpperCase();
 }
 
 function extractFirstDateTime(text: string): string | null {
@@ -468,8 +465,8 @@ function filterCourseLinks(
     return courseLinks;
   }
 
-  const keys = new Set(registeredCourseNames.map(normalizeCourseKey));
-  const matched = courseLinks.filter((item) => keys.has(normalizeCourseKey(item.courseName)));
+  const keys = new Set(registeredCourseNames.map(courseKey));
+  const matched = courseLinks.filter((item) => keys.has(courseKey(item.courseName)));
   return matched.length > 0 ? matched : courseLinks;
 }
 

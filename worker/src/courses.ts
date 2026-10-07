@@ -14,11 +14,7 @@ import type {
   RegistrationData,
   SyllabusFile,
 } from './types';
-
-/** 全角半角（NFKC）・空白・大小文字を吸収した比較キー。 */
-export function normalizeKey(value: string): string {
-  return value.normalize('NFKC').replace(/\s+/g, '').toUpperCase();
-}
+import { courseKey } from './course-key';
 
 // ---------- 科目インデックス ----------
 
@@ -128,13 +124,13 @@ export function resolveCourse(index: CourseEntry[], rawKey: string): Resolution 
     if (byId.length === 1) return { kind: 'one', entry: byId[0]! };
     if (byId.length > 1) return { kind: 'many', candidates: byId };
   }
-  const nk = normalizeKey(key);
+  const nk = courseKey(key);
   if (nk === '') return { kind: 'none' };
-  const exact = index.filter((e) => e.names.some((n) => normalizeKey(n) === nk));
+  const exact = index.filter((e) => e.names.some((n) => courseKey(n) === nk));
   if (exact.length === 1) return { kind: 'one', entry: exact[0]! };
   if (exact.length > 1) return { kind: 'many', candidates: exact };
   const partial = index.filter((e) => e.names.some((n) => {
-    const nn = normalizeKey(n);
+    const nn = courseKey(n);
     return nn.includes(nk) || (nn.length >= 3 && nk.includes(nn));
   }));
   if (partial.length === 1) return { kind: 'one', entry: partial[0]! };
@@ -212,8 +208,8 @@ export function assignmentCourseInfo(
   const idMatch = /^course_(\d+)_/.exec(assignment.assignmentId);
   let entry = idMatch ? index.find((e) => e.aceCourseId === idMatch[1]) : undefined;
   if (!entry) {
-    const nk = normalizeKey(assignment.courseName);
-    entry = index.find((e) => e.names.some((n) => normalizeKey(n) === nk));
+    const nk = courseKey(assignment.courseName);
+    entry = index.find((e) => e.names.some((n) => courseKey(n) === nk));
   }
   if (!entry) return null;
   const rule = findGradingRule(rules, entry.courseCode);
@@ -255,19 +251,19 @@ export function waitingAssignments(coursework: CourseworkFile | null): Array<Ass
 // ---------- 科目詳細 ----------
 
 function relatedAnnouncements(all: Announcement[], names: string[]): Announcement[] {
-  const keys = names.map(normalizeKey).filter((k) => k !== '');
+  const keys = names.map(courseKey).filter((k) => k !== '');
   const hit = all.filter((a) => {
-    const hint = a.courseNameHint ? normalizeKey(a.courseNameHint) : null;
+    const hint = a.courseNameHint ? courseKey(a.courseNameHint) : null;
     if (hint !== null && keys.includes(hint)) return true;
-    const title = normalizeKey(a.title);
+    const title = courseKey(a.title);
     return keys.some((k) => k.length >= 3 && title.includes(k));
   });
   return hit.sort((a, b) => (b.postedAt ?? '').localeCompare(a.postedAt ?? '')).slice(0, 5);
 }
 
 function relatedContents(all: CourseContent[], courseId: string | null, names: string[]): CourseContent[] {
-  const keys = names.map(normalizeKey);
-  const hit = all.filter((c) => (courseId !== null && new RegExp(`course_${courseId}(?:\\D|$)`).test(c.courseUrl)) || keys.includes(normalizeKey(c.courseName)));
+  const keys = names.map(courseKey);
+  const hit = all.filter((c) => (courseId !== null && new RegExp(`course_${courseId}(?:\\D|$)`).test(c.courseUrl)) || keys.includes(courseKey(c.courseName)));
   return hit.sort((a, b) => (b.updatedAt ?? b.listedAt ?? '').localeCompare(a.updatedAt ?? a.listedAt ?? '')).slice(0, 5);
 }
 
@@ -320,11 +316,11 @@ export function buildCourseDetail(args: {
   const names = entry.names;
   const courseId = entry.aceCourseId;
   const allAssignments: Assignment[] = summary ? [...summary.upcomingAssignments, ...(summary.deadlineUnknownAssignments ?? [])] : [];
-  const nameKeys = names.map(normalizeKey);
+  const nameKeys = names.map(courseKey);
   const assignments = allAssignments.filter((a) => {
     const m = /^course_(\d+)_/.exec(a.assignmentId);
     if (m && courseId !== null) return m[1] === courseId;
-    return nameKeys.includes(normalizeKey(a.courseName));
+    return nameKeys.includes(courseKey(a.courseName));
   });
 
   const cw = entry.coursework;

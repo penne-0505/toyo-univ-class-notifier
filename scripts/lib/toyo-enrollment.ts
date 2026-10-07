@@ -7,6 +7,7 @@ import {
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
 } from './toyo';
+import { dataDir, outputDir, repoRoot } from './toyo-paths';
 
 export type Course = {
   semesterLabel: string;
@@ -55,9 +56,7 @@ function computeFetchStatus(pageTitle: string, courses: Course[]): FetchStatus {
   return 'success';
 }
 
-export const repoRoot = path.resolve(__dirname, '..', '..');
-export const outputDir = path.join(repoRoot, 'output', 'toyo');
-export const dataDir = path.join(repoRoot, 'data');
+export { repoRoot, outputDir, dataDir };
 export const spreadsheetDir = path.join(repoRoot, 'output', 'spreadsheet');
 export const jsonOutputPath = path.join(outputDir, 'registration-data.json');
 export const markdownOutputPath = path.join(outputDir, 'registration-summary.md');

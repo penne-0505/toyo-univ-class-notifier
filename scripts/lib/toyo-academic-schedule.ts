@@ -1,6 +1,6 @@
 import fsSync from 'node:fs';
 import path from 'node:path';
-import { dataDir, outputDir } from './toyo-enrollment';
+import { dataDir, outputDir } from './toyo-paths';
 
 /**
  * data/academic-schedule.json（手書きの静的データ）を読んで計算するだけのライブラリ。

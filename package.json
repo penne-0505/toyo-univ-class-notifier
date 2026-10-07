@@ -12,6 +12,7 @@
     "toyo:export-enrollment": "tsx ./scripts/toyo-export-enrollment.ts",
     "toyo:syllabus": "tsx ./scripts/toyo-fetch-syllabus.ts",
     "toyo:syllabus:seed": "tsx ./scripts/toyo-seed-syllabus.ts",
+    "toyo:build:index": "tsx ./scripts/toyo-build-index.ts",
     "toyo:calendar": "tsx ./scripts/toyo-fetch-calendar.ts",
     "toyo:announcements": "tsx ./scripts/toyo-fetch-announcements.ts",
     "toyo:coursework": "tsx ./scripts/toyo-fetch-coursework.ts",

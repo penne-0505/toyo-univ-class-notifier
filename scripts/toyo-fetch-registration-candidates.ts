@@ -9,12 +9,19 @@
  *   npm run toyo:candidates -- --add        # 追加登録期間画面（Usin071611）を入口にする
  *   npm run toyo:candidates -- --syllabus      # 夜間（6・7限）・集中科目のシラバスも取得する
  *   npm run toyo:candidates -- --syllabus=all  # 全科目のシラバスを取得する（時間がかかる）
+ *   npm run toyo:candidates -- --syllabus --refresh-pool  # 取得したシラバス本文で syllabus-pool を上書きする
+ *
+ * 保存先:
+ *   registration-candidates.json            最新（期間を問わず毎回上書き）
+ *   registration-candidates.<regular|add>.json  期間別（その期間の最新。配信対象外）
+ *   syllabus-pool/<授業コード>.json         シラバス本文（既存は上書きしない。--refresh-pool で上書き。配信対象外）
  */
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { type Page } from 'playwright';
 import { outputDir } from './lib/toyo-enrollment';
+import { saveCandidatesToPool } from './lib/syllabus-pool';
 import {
   getOrCreatePage,
   launchStateContext,
@@ -45,6 +52,9 @@ export function describeUnavailableScreen(period: 'regular' | 'add', bodyText: s
 
 const subjectListUrl = 'https://g-sys.toyo.ac.jp/univision/action/in/f07/Usin071640';
 export const candidatesOutputPath = path.join(outputDir, 'registration-candidates.json');
+/** 期間別の保存先（registration-candidates.regular.json / registration-candidates.add.json） */
+export const candidatesPeriodOutputPath = (period: 'regular' | 'add'): string =>
+  path.join(outputDir, `registration-candidates.${period}.json`);
 
 const dayLabelMap: Record<string, string> = {
   '11': '月',
@@ -243,6 +253,8 @@ type SyllabusMode = 'none' | 'evening' | 'all';
 export type CollectOptions = {
   additional?: boolean;
   syllabus?: SyllabusMode;
+  /** true なら syllabus-pool の既存ファイルも取得したシラバス本文で上書きする */
+  refreshPool?: boolean;
 };
 
 const cellButtonSelector = (cell: CellRef): string =>
@@ -512,7 +524,16 @@ export async function collectRegistrationCandidates(options: CollectOptions = {}
       errors,
     };
     await fs.mkdir(path.dirname(candidatesOutputPath), { recursive: true });
-    await fs.writeFile(candidatesOutputPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    const serialized = `${JSON.stringify(data, null, 2)}\n`;
+    await fs.writeFile(candidatesOutputPath, serialized, 'utf8');
+    await fs.writeFile(candidatesPeriodOutputPath(data.period), serialized, 'utf8');
+    try {
+      const pool = await saveCandidatesToPool(data, { refresh: options.refreshPool });
+      if (pool.written + pool.kept > 0) console.log(`syllabus-pool: written=${pool.written} kept(existing)=${pool.kept}`);
+    } catch (error) {
+      // プールは補助的な保存先。失敗しても候補ファイルの取得結果は有効
+      console.warn(`syllabus-pool への保存に失敗しました（続行）: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return data;
   } finally {
     await context.close();
@@ -524,7 +545,8 @@ export async function main(): Promise<void> {
   const additional = process.argv.includes('--add');
   const syllabusArg = process.argv.find((arg) => arg === '--syllabus' || arg.startsWith('--syllabus='));
   const syllabus: SyllabusMode = !syllabusArg ? 'none' : syllabusArg === '--syllabus=all' ? 'all' : 'evening';
-  const data = await collectRegistrationCandidates({ additional, syllabus });
+  const refreshPool = process.argv.includes('--refresh-pool');
+  const data = await collectRegistrationCandidates({ additional, syllabus, refreshPool });
   const withSyllabus = data.candidates.filter((c) => c.syllabus).length;
   console.log(`Candidates: ${data.candidates.length} (syllabus: ${withSyllabus}, errors: ${data.errors.length})`);
   console.log(`Saved: ${candidatesOutputPath}`);

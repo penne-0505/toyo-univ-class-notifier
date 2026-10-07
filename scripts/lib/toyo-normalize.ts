@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto';
 // health.json の lastRunAt / lastSuccessAt も毎回変わるだけの時刻（変化検知から外す）
 const TIME_KEY_PATTERN = /^(?:\w*(?:fetched|generated|built|saved|checked|published)At\w*|last(?:run|success)At|ageMinutes)$/i;
 
-function stripTimeKeys(value: unknown): unknown {
+/** 時刻キー（fetchedAt / builtAt など）を再帰的に取り除き、キー順を揃えた JSON 値を返す。 */
+export function stripTimeKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(stripTimeKeys);
   }

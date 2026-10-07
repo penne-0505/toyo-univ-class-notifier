@@ -43,13 +43,14 @@ npm run toyo:sync
 | `npm run toyo:sync` | 履修・課題・コンテンツ・お知らせ・祝日をまとめて取得して `summary.json` を更新 |
 | `npm run toyo:export-enrollment` | 履修登録確認表のみ取得・整形 |
 | `npm run toyo:syllabus -- --course-code <code>` | 指定授業のシラバスを取得（学期内キャッシュあり） |
-| `npm run toyo:syllabus:seed [-- --force]` | `registration-candidates.json` の候補シラバス本文から、登録中科目の `output/toyo/syllabus/<授業コード>.json/.md` を書き出す（ブラウザ不要。既存は `--force` で上書き） |
+| `npm run toyo:syllabus:seed [-- --force] [--course-code <code>]` | シラバスの本文から、登録中科目の `output/toyo/syllabus/<授業コード>.json/.md` を書き出す（ブラウザ不要）。入力は `--from <ファイル>` が無ければ `output/toyo/syllabus-pool/` → 最新の `registration-candidates.json` の順。既存は `--force` で上書き。`--course-code` で対象を絞る |
+| `npm run toyo:build:index` | `output/toyo/course-index.json`（科目の対応表）を作る。ファイルを読むだけでネットワークもブラウザも使わない（純粋処理）。授業コード・ACE のコース ID・scheduleCd・時限・シラバス/評価ルール/ACE の有無を科目ごとにまとめ、今学期の科目の欠けを `warnings` に出す。`toyo:coursework` の最後と `toyo:daily` が自動で呼ぶ |
 | `npm run toyo:announcements` | ACEのコースニュース（休講・補講・教室変更含む）のみ取得 |
 | `npm run toyo:coursework [-- --no-summary]` | ACE の全 2026 年度コースの提出状況を取得（`_report` / `_query` / `_survey` / `_grade` と提出記録 30 日）→ `output/toyo/toyonet-ace-coursework.json`。授業コードで `registration-data.json` と突き合わせる。取得後に summary.json を再生成（`--no-summary` で省略）。`toyo-coursework` タイマー（毎時 :20）用 |
 | `npm run toyo:calendar` | 内閣府CSVから祝日データを取得 |
 | `npm run toyo:run` | セッション疎通確認用の最小ランナー |
 | `npm run toyo:context [-- --print]` | エージェントが最初に読む圧縮コンテキストを `output/toyo/agent-context.{md,json}` に生成。標準出力は 1 行サマリのみ（全文は `--print`、JSON は `--print --format json`） |
-| `npm run toyo:candidates [-- --syllabus]` | 履修登録画面の全コマから登録可能な科目一覧を取得（`--syllabus` で夜間・集中科目のシラバスも取得、`--syllabus=all` で全科目） |
+| `npm run toyo:candidates [-- --syllabus] [--add] [--refresh-pool]` | 履修登録画面の全コマから登録可能な科目一覧を取得（`--syllabus` で夜間・集中科目のシラバスも取得、`--syllabus=all` で全科目）。保存先は `registration-candidates.json`（最新）と `registration-candidates.<regular\|add>.json`（期間別）。取得したシラバス本文は `syllabus-pool/<授業コード>.json` にも貯める（既存は上書きしない。`--refresh-pool` で上書き） |
 | `npm run toyo:lottery` | 抽選実施科目一覧と当落（○/×）を取得（登録成功は確定ではない。落選科目は履修から削除される） |
 | `npm run toyo:credits` | 単位数集計表（卒業要件の充足状況・学期別 GPA）と履修・修得科目一覧（不合格含む）を取得 |
 | `npm run toyo:schedule [-- --date YYYY-MM-DD]` | `data/academic-schedule.json`（しおりから手で起こした学年暦）を読み、指定日（既定: 今日 JST）に進行中・直近の期間と、各曜日の第N回授業日を表示（ポータル不要） |
@@ -57,7 +58,7 @@ npm run toyo:sync
 | `npm run toyo:register -- --file plan.json [--exec]` | 履修登録画面に科目を入れて送信。既定は dry-run、`--exec` で実際に登録 |
 | `npm run toyo:publish [-- --dry-run --include-candidates --force --push-all-api]` | allowlist（`output/toyo/**`・`output/bot/summary.json`・`data/**`）を `~/toyo-data` へ同期し、時刻以外に差分があるときだけ commit & push。`meta.json` に鮮度・`sourceStatus` を書く。`TOYO_API_URL` / `TOYO_API_WRITE_KEY` があれば変化分を Worker にも PUT（`--push-all-api` で全件） |
 | `npm run toyo:watch` | ACE の未提出課題とお知らせだけ取得し、変化があれば summary / agent-context を再生成して publish（5 分タイマー用。失敗が続くと 15→30 分に自動バックオフ） |
-| `npm run toyo:daily` | 全取得（coursework → sync → credits → lottery → context）→ `toyo:publish --include-candidates --force`（24 時間タイマー用） |
+| `npm run toyo:daily` | 全取得（coursework → sync → credits → lottery）→ `toyo:build:index` → index で今学期のシラバスが欠けている科目を補完（pool から seed → 無ければ時間割検索）→ context → `toyo:publish --include-candidates --force`（24 時間タイマー用） |
 | `npm run toyo:health -- <record\|status\|test-notify>` | 定期ジョブ（watch / coursework / daily）の失敗検知と通知。`status` で状態一覧（アラート中なら終了コード 1）、`test-notify` でテスト通知。systemd の `ExecStopPost` が成否を記録する。閾値・送り先は `docs/toyo-automation-runbook.md` の「失敗の検知と通知」 |
 | `npm run typecheck` | TypeScript型チェック |
 
@@ -80,7 +81,10 @@ npm run toyo:sync
 | `output/bot/summary.json` | 全ソースを集約した summary（歴史的経緯で `bot/` 配下にある。Skill・Worker・toyo-data が読む） |
 | `output/toyo/agent-context.json` | エージェント用の圧縮コンテキスト（構造化JSON） |
 | `output/toyo/agent-context.md` | エージェント用の圧縮コンテキスト（Markdown） |
-| `output/toyo/registration-candidates.json` | 履修登録画面から取得した登録可能科目（選択ID `scheduleCd`、コマ、シラバス） |
+| `output/toyo/registration-candidates.json` | 履修登録画面から取得した登録可能科目（選択ID `scheduleCd`、コマ、シラバス）。最新の取得結果で、期間（正規 / 追加）を問わず上書きされる |
+| `output/toyo/registration-candidates.<regular\|add>.json` | 同上の期間別。その期間の最新の取得結果が残る（配信対象外） |
+| `output/toyo/syllabus-pool/<授業コード>.json` | 登録可能科目のシラバス本文の貯め場所（約 146 科目）。候補ファイルが上書きされても残る。配信対象外 |
+| `output/toyo/course-index.json` | 科目の対応表（組み立て層の出力）。`courses[]`: `courseCode` / `semester` / `names`（portal・ace・key）/ `aceCourseId` / `scheduleCd`（推定のとき `scheduleCdInferred: true`）/ `slots` / `has`（syllabus・gradingRules・aceCourse）/ `warnings`、トップレベル `aceOnly`。`warnings` は今学期の科目だけ |
 | `output/toyo/lottery-results.json` / `.md` | 抽選実施科目一覧と当落 |
 | `output/toyo/credit-summary.json` / `.md` | 卒業要件の充足状況・学期別成績・履修修得科目一覧 |
 | `artifacts/toyo/register-*.png` / `register-result.json` | `toyo:register` の送信前スクリーンショットと結果 |
