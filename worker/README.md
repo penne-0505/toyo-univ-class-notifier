@@ -1,6 +1,6 @@
 # toyo-data-api
 
-`toyo:publish` が集めた取得データ（`output/toyo/**`、`output/bot/summary.json`、`data/**`）を、GitHub を読めないクラウドのエージェントが REST で読むための Cloudflare Worker。KV に保存し、Bearer キーで保護する。データには学籍番号・氏名・成績が含まれる。
+`toyo:publish` が集めた取得データ（`output/toyo/**`、`data/**`）を、GitHub を読めないクラウドのエージェントが REST で読むための Cloudflare Worker。KV に保存し、Bearer キーで保護する。データには学籍番号・氏名・成績が含まれる。
 
 正本は GitHub の private repo `toyo-data`。Worker は配信用の複製で、GitHub トークンは持たない。
 
@@ -22,8 +22,8 @@ toyo:publish ─ PUT/DELETE (書き込みキー) ─▶ Worker ─▶ KV (DATA)
 | GET | `/v1/meta` | `meta.json`（publishedAt, files, sourceStatus）＋ `apiVersion`、`updatedAt`、`health`（`output/toyo/health.json` の内容。定期ジョブごとの最終成功・連続失敗・`alerting`。直接 PUT された health.json があればそちらを優先） |
 | GET | `/v1/context` | `agent-context.md`（text/markdown）。`?format=json` で JSON |
 | GET | `/v1/files` | 保存中のパス・サイズ・fetchedAt |
-| GET | `/v1/files/{path}` | ファイルをそのまま返す。許可は `output/toyo/`、`output/bot/summary.json`、`data/` のみ（他は 404） |
-| GET | `/v1/summary` | `output/bot/summary.json`（全ソースを集約した summary。歴史的経緯で `bot/` 配下にある） |
+| GET | `/v1/files/{path}` | ファイルをそのまま返す。許可は `output/toyo/`、`data/` のみ（他は 404）。旧 `output/bot/summary.json` も 2026-10 までは通す（削除用） |
+| GET | `/v1/summary` | `output/toyo/summary.json`（全ソースを集約した summary）。無ければ旧パス `output/bot/summary.json` にフォールバック（1 リリース分の互換。2026-10 以降に削除） |
 | GET | `/v1/assignments?within=7d\|14d\|today\|tomorrow\|all&status=pending&includeWaiting=1` | 課題。`within` は `Nd` 任意、既定 `7d`。JST 判定。期限切れの未提出は `overdue: true`、`dueAt` が null は `deadlineUnknown: true`（常に末尾に含む）。各要素に `course: { courseCode, courseName, gradingWeight: { name, weightPercent, kind, perSession, scenario } \| null, cutoffs, coursework: { submitted, notSubmitted } \| null }`（科目不明は `course: null`）。`includeWaiting=1` で ACE の受付開始待ちの report / query も混ぜる（`waiting: true`、`opensAt` 付き） |
 | GET | `/v1/courses` | 登録科目一覧（`courseCode`・`courseName`・`timetable`・`aceCourseId`）。`aceOnlyCourses` は ACE にだけあるコース（自己登録など） |
 | GET | `/v1/courses/{key}` | 科目の統合ビュー。`key` は授業コード / ACE courseId / 科目名（NFKC・空白除去・大文字化で曖昧一致。複数ヒットは **HTTP 300** と `candidates`、0 件は 404）。応答: `course`・`timetable`・`sessionNumberToday`（summary が今日のものでなければ null）・`nextSessionNumber`・`syllabus`（`lectureSchedule` を回ごとに分割、`today` / `next` の抜粋。シラバス未取得なら null）・`gradingRules`・`coursework`（items / counts / grades / recentSubmissions）・`assignments`・`announcements`（直近 5 件）・`contents`（直近 5 件） |
@@ -79,5 +79,5 @@ npx wrangler deploy
 - KV namespace は `npx wrangler kv namespace create DATA` で作成済み。id は `wrangler.jsonc` に記載。
 - `compatibility_date` は UTC の「今日」を超えられない（未来日だと deploy が拒否される）。
 - 全件を入れ直す: repo ルートで `npm run toyo:publish -- --push-all-api`。
-- 型 `src/types.ts` は `scripts/lib/toyo-summary.ts` と `scripts/lib/toyonet-ace-coursework.ts` のコピー。元が変わったら追従する。
-- 科目の統合ロジックは `src/courses.ts`（KV からの読み出しは `src/index.ts`）。読むファイルは `output/bot/summary.json`・`output/toyo/registration-data.json`・`output/toyo/toyonet-ace-coursework.json`・`output/toyo/syllabus/<授業コード>.json`・`data/grading-rules.json`。
+- 型 `src/types.ts` は `scripts/build/summary.ts` と `scripts/lib/coursework-model.ts` のコピー。元が変わったら追従する。
+- 科目の統合ロジックは `src/courses.ts`（KV からの読み出しは `src/index.ts`）。読むファイルは `output/toyo/summary.json`（無ければ旧 `output/bot/summary.json`）・`output/toyo/registration-data.json`・`output/toyo/toyonet-ace-coursework.json`・`output/toyo/syllabus/<授業コード>.json`・`data/grading-rules.json`。

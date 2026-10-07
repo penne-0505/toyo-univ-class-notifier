@@ -1,4 +1,4 @@
-// scripts/lib/toyo-summary.ts などの型を Worker 側にコピーしたもの。scripts 側は import しない。
+// scripts/build/summary.ts などの型を Worker 側にコピーしたもの。scripts 側は import しない。
 // 元の型を変えたらここも追従すること（Worker は JSON をそのまま返すだけなので、ズレても壊れはしない）。
 
 export type AssignmentStatus = 'pending' | 'submitted' | 'unknown';
@@ -11,6 +11,8 @@ export type Assignment = {
   status: AssignmentStatus;
   sourceUrl: string | null;
   notes: string[];
+  /** summary の全体一覧にだけ付く（scripts/build/summary.ts が course-index で引いた授業コード。引けなければ null = 科目不明）。 */
+  courseCode?: string | null;
 };
 
 export type ContentResourceLink = { text: string; url: string };
@@ -27,6 +29,8 @@ export type CourseContent = {
   openFrom: string | null;
   openUntil: string | null;
   resourceLinks: ContentResourceLink[];
+  /** summary の全体一覧にだけ付く（scripts/build/summary.ts が course-index で引いた授業コード。引けなければ null = 科目不明）。 */
+  courseCode?: string | null;
 };
 
 export type AnnouncementCategory = '休講' | '補講' | '教室変更' | 'その他';
@@ -40,9 +44,11 @@ export type Announcement = {
   targetDate: string | null;
   content: string;
   sourceUrl: string;
+  /** summary の全体一覧にだけ付く（scripts/build/summary.ts が course-index で引いた授業コード。引けなければ null = 科目不明）。 */
+  courseCode?: string | null;
 };
 
-export type DiscordCourseSummary = {
+export type CourseSummary = {
   courseName: string;
   courseCode: string;
   instructor: string;
@@ -91,7 +97,7 @@ export type CourseworkBrief = {
 };
 
 export type DetailedClassSummary = {
-  classInfo: DiscordCourseSummary;
+  classInfo: CourseSummary;
   sessionNumber: number | null;
   coursework?: CourseworkBrief | null;
   syllabus: DetailedClassNotes | null;
@@ -237,10 +243,10 @@ export type SourceStatus = {
   };
 };
 
-export type DiscordSummary = {
+export type Summary = {
   generatedAt: string;
   timezone: 'Asia/Tokyo';
-  nextClass: DiscordCourseSummary | null;
+  nextClass: CourseSummary | null;
   nextClassNotes: NextClassNotes | null;
   todayClasses: DetailedClassSummary[];
   tomorrowClasses: DetailedClassSummary[];

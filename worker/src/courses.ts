@@ -6,7 +6,7 @@ import type {
   CourseworkCourse,
   CourseworkFile,
   CourseworkItem,
-  DiscordSummary,
+  Summary,
   GradingComponent,
   GradingRule,
   GradingRulesFile,
@@ -269,7 +269,7 @@ function relatedContents(all: CourseContent[], courseId: string | null, names: s
 
 export function buildCourseDetail(args: {
   entry: CourseEntry;
-  summary: DiscordSummary | null;
+  summary: Summary | null;
   coursework: CourseworkFile | null;
   rules: GradingRulesFile | null;
   syllabusFile: SyllabusFile | null;

@@ -1,4 +1,4 @@
-import type { Announcement, Assignment, CourseworkFile, DetailedClassSummary, DiscordSummary, FileMetadata, GradingRulesFile, HealthSnapshot, PublishMeta, RegistrationData, SyllabusFile } from './types';
+import type { Announcement, Assignment, CourseworkFile, DetailedClassSummary, Summary, FileMetadata, GradingRulesFile, HealthSnapshot, PublishMeta, RegistrationData, SyllabusFile } from './types';
 import { assignmentCourseInfo, buildCourseDetail, buildCourseIndex, courseSummaryLine, resolveCourse, waitingAssignments } from './courses';
 
 const API_VERSION = '1';
@@ -9,6 +9,10 @@ const HEALTH_FILE = 'output/toyo/health.json';
 const UPDATED_AT_KEY = 'updatedAt';
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
+// summary.json は 2026-10 に output/bot/ から output/toyo/ へ移した。旧パスは 1 リリース分の互換（読み出しのフォールバックと、
+// toyo:publish が旧ファイルを削除するための DELETE）として許可している。2026-10 以降に削除する（旧パスの正規表現と LEGACY_SUMMARY_FILE）。
+const SUMMARY_FILE = 'output/toyo/summary.json';
+const LEGACY_SUMMARY_FILE = 'output/bot/summary.json';
 const ALLOWED_PATH = [/^output\/toyo\/.+/, /^output\/bot\/summary\.json$/, /^data\/.+/];
 
 type Role = 'read' | 'write';
@@ -106,8 +110,16 @@ function parseMs(iso: string | null): number | null {
 
 // ---------- KV ----------
 
-async function readSummary(env: Env): Promise<DiscordSummary> {
-  const summary = await env.DATA.get<DiscordSummary>(FILE_PREFIX + 'output/bot/summary.json', 'json');
+/** summary.json を読む。output/toyo/summary.json が無ければ旧パス（output/bot/summary.json）にフォールバック（2026-10 以降に削除）。 */
+async function readSummaryOrNull(env: Env): Promise<Summary | null> {
+  return (
+    (await env.DATA.get<Summary>(FILE_PREFIX + SUMMARY_FILE, 'json')) ??
+    (await env.DATA.get<Summary>(FILE_PREFIX + LEGACY_SUMMARY_FILE, 'json'))
+  );
+}
+
+async function readSummary(env: Env): Promise<Summary> {
+  const summary = await readSummaryOrNull(env);
   if (!summary) throw new HttpError(404, 'summary.json はまだ投入されていません');
   return summary;
 }
@@ -255,7 +267,11 @@ async function handleFileDelete(env: Env, rel: string): Promise<Response> {
 }
 
 async function handleSummary(env: Env): Promise<Response> {
-  const { value, metadata } = await env.DATA.getWithMetadata<FileMetadata>(FILE_PREFIX + 'output/bot/summary.json', 'stream');
+  let { value, metadata } = await env.DATA.getWithMetadata<FileMetadata>(FILE_PREFIX + SUMMARY_FILE, 'stream');
+  if (!value) {
+    // 旧パスへのフォールバック（2026-10 以降に削除）
+    ({ value, metadata } = await env.DATA.getWithMetadata<FileMetadata>(FILE_PREFIX + LEGACY_SUMMARY_FILE, 'stream'));
+  }
   if (!value) throw new HttpError(404, 'summary.json はまだ投入されていません');
   return new Response(value, {
     headers: { ...BASE_HEADERS, 'Content-Type': metadata?.contentType ?? 'application/json; charset=utf-8' },
@@ -264,7 +280,7 @@ async function handleSummary(env: Env): Promise<Response> {
 
 type AssignmentOut = Assignment & { deadlineUnknown?: true; overdue?: true; waiting?: true; opensAt?: string | null; course?: unknown };
 
-async function handleAssignmentsFrom(env: Env, summary: DiscordSummary, url: URL, nowMs: number): Promise<Response> {
+async function handleAssignmentsFrom(env: Env, summary: Summary, url: URL, nowMs: number): Promise<Response> {
   const within = url.searchParams.get('within') ?? '7d';
   const status = url.searchParams.get('status');
   if (status !== null && status !== 'pending' && status !== 'submitted' && status !== 'unknown') {
@@ -350,13 +366,13 @@ async function handleCourseDetail(env: Env, rawKey: string, nowMs: number): Prom
   }
   const entry = resolved.entry;
   const [summary, syllabusFile] = await Promise.all([
-    env.DATA.get<DiscordSummary>(FILE_PREFIX + 'output/bot/summary.json', 'json'),
+    readSummaryOrNull(env),
     entry.courseCode ? readJsonFile<SyllabusFile>(env, `output/toyo/syllabus/${entry.courseCode}.json`) : Promise.resolve(null),
   ]);
   return json(buildCourseDetail({ entry, summary, coursework, rules, syllabusFile, nowMs, todayString: jstDateString(nowMs) }));
 }
 
-function dayView(summary: DiscordSummary, which: 'today' | 'tomorrow', nowMs: number): Response {
+function dayView(summary: Summary, which: 'today' | 'tomorrow', nowMs: number): Response {
   const offset = which === 'today' ? 0 : 24 * 60 * 60 * 1000;
   const date = jstDateString(nowMs + offset);
   const classes: DetailedClassSummary[] = which === 'today' ? summary.todayClasses : summary.tomorrowClasses;
@@ -399,8 +415,8 @@ curl -H "Authorization: Bearer $TOYO_READ_KEY" https://<このホスト>/v1/cont
 | GET | /v1/meta | publishedAt、各ファイルの fetchedAt、sourceStatus、updatedAt、health（定期ジョブの最終成功・連続失敗・alerting） |
 | GET | /v1/context | agent-context.md（text/markdown）。\`?format=json\` で JSON。まずこれを読む |
 | GET | /v1/files | 保存中のパスとサイズ・fetchedAt |
-| GET | /v1/files/{path} | ファイルをそのまま返す（output/toyo/, output/bot/summary.json, data/ のみ） |
-| GET | /v1/summary | output/bot/summary.json |
+| GET | /v1/files/{path} | ファイルをそのまま返す（output/toyo/, data/ のみ。旧 output/bot/summary.json も 2026-10 までは通す） |
+| GET | /v1/summary | output/toyo/summary.json（無ければ旧 output/bot/summary.json） |
 | GET | /v1/assignments | \`?within=7d\\|14d\\|today\\|tomorrow\\|all&status=pending&includeWaiting=1\`。締切不明は \`deadlineUnknown: true\`。各要素に \`course\`（配点・足切り・提出済/未提出数）。\`includeWaiting=1\` で受付開始待ちも混ぜる（\`waiting: true\`） |
 | GET | /v1/courses | 登録科目一覧（授業コード・科目名・曜日時限・ACE courseId） |
 | GET | /v1/courses/{key} | 科目 1 件の統合ビュー。key は授業コード / ACE courseId / 科目名（曖昧一致、複数ヒットは 300 で候補）。時間割・今日の第N回・シラバス（回ごと）・成績ルール・提出状況・課題・お知らせ・コンテンツ |
