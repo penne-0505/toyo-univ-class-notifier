@@ -16,7 +16,7 @@ export async function main(): Promise<void> {
 
   // Calendar is fetched in parallel with the summary build to save time
   const [summary] = await Promise.all([
-    buildDiscordSummary(enrollment),
+    buildDiscordSummary(enrollment, undefined, { syllabusMode: 'fetch' }),
     fetchAcademicCalendar(enrollment.academicYear).catch((error: unknown) => {
       console.warn(
         `Calendar fetch failed (non-fatal): ${error instanceof Error ? error.message : String(error)}`

@@ -256,6 +256,9 @@ async function openSyllabusDetailFromTimetable(
 ): Promise<Page> {
   const context = page.context();
   const chooserPromise = page.waitForEvent('popup', { timeout: 10_000 });
+  // 先に拒否ハンドラを付けておく。後続の await が先に例外になると、この Promise が誰にも待たれずに
+  // reject され、未処理拒否として Node プロセスごと落ちる（2026-10-07 に毎時の取得が 7 回連続で落ちた原因）。
+  chooserPromise.catch(() => undefined);
   await page.evaluate((rowIndex) => {
     const rows = [...document.querySelectorAll('tr')];
     const target = rows[rowIndex]?.querySelector<HTMLAnchorElement>('td.subject_name a');
@@ -271,6 +274,7 @@ async function openSyllabusDetailFromTimetable(
     timeout: 10_000,
     predicate: (popup) => popup !== page && popup !== chooserPage,
   });
+  publicPagePromise.catch(() => undefined);
   await chooserPage.locator('input.button[value="日本語"]').click({ force: true });
   const detailPage = await publicPagePromise;
   await detailPage.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => {});
@@ -429,19 +433,23 @@ type SyllabusFileCache = {
   syllabus: SyllabusRecord;
 };
 
-export async function fetchSyllabusWithCache(course: SyllabusLookupInput): Promise<SyllabusRecord> {
-  if (course.courseCode && course.academicYear) {
-    const stem = course.courseCode.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80);
-    const cachePath = path.join(syllabusOutputDir, `${stem}.json`);
-    try {
-      const raw = await fs.readFile(cachePath, 'utf8');
-      const cached = JSON.parse(raw) as SyllabusFileCache;
-      if (cached.syllabus?.academicYear === course.academicYear) {
-        return cached.syllabus;
-      }
-    } catch {
-      // cache miss — fall through to fetch
+/** キャッシュ（output/toyo/syllabus/<授業コード>.json）だけを読む。ブラウザは使わない。無ければ null */
+export async function readCachedSyllabus(course: SyllabusLookupInput): Promise<SyllabusRecord | null> {
+  if (!course.courseCode || !course.academicYear) return null;
+  const stem = course.courseCode.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80);
+  const cachePath = path.join(syllabusOutputDir, `${stem}.json`);
+  try {
+    const raw = await fs.readFile(cachePath, 'utf8');
+    const cached = JSON.parse(raw) as SyllabusFileCache;
+    if (cached.syllabus?.academicYear === course.academicYear) {
+      return cached.syllabus;
     }
+  } catch {
+    // cache miss
   }
-  return fetchSyllabus(course);
+  return null;
+}
+
+export async function fetchSyllabusWithCache(course: SyllabusLookupInput): Promise<SyllabusRecord> {
+  return (await readCachedSyllabus(course)) ?? fetchSyllabus(course);
 }

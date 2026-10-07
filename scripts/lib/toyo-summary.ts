@@ -24,7 +24,23 @@ import {
   type CourseworkResult,
   type CourseworkScheduleEntry,
 } from './toyonet-ace-coursework';
-import { fetchSyllabusWithCache, type SyllabusRecord } from './toyo-syllabus';
+import { fetchSyllabusWithCache, readCachedSyllabus, type SyllabusLookupInput, type SyllabusRecord } from './toyo-syllabus';
+
+/**
+ * シラバスの取り方。
+ * - cache-only: output/toyo/syllabus のキャッシュだけを読む（ブラウザを開かない）。5 分・毎時の経路はこちら
+ * - fetch: キャッシュが無ければ時間割検索のポップアップ連鎖で取得する。日次の全取得だけ
+ */
+export type SyllabusMode = 'cache-only' | 'fetch';
+
+async function loadSyllabus(course: SyllabusLookupInput, mode: SyllabusMode): Promise<SyllabusRecord> {
+  if (mode === 'fetch') return fetchSyllabusWithCache(course);
+  const cached = await readCachedSyllabus(course);
+  if (!cached) {
+    throw new Error('syllabus cache missing (run npm run toyo:syllabus:seed or wait for toyo:daily)');
+  }
+  return cached;
+}
 import { courseInSemesterOn, sessionNumberFor } from './toyo-academic-schedule';
 import {
   collectToyoNetAceAnnouncements,
@@ -276,7 +292,8 @@ function tomorrowOccurrence(course: Course, now: Date): DiscordCourseSummary | n
 
 async function buildNextClassNotes(
   nextClass: DiscordCourseSummary | null,
-  enrollment: EnrollmentData
+  enrollment: EnrollmentData,
+  syllabusMode: SyllabusMode
 ): Promise<NextClassNotes | null> {
   if (!nextClass) return null;
 
@@ -284,10 +301,7 @@ async function buildNextClassNotes(
   if (!course) return null;
 
   try {
-    const record = await fetchSyllabusWithCache({
-      ...course,
-      academicYear: enrollment.academicYear,
-    });
+    const record = await loadSyllabus({ ...course, academicYear: enrollment.academicYear }, syllabusMode);
 
     return {
       checkedAt: formatJstDate(new Date()),
@@ -381,7 +395,8 @@ async function buildDetailedClassesForOffset(
   announcements: Announcement[],
   coursework: CourseworkResult | null,
   now: Date,
-  dayOffset: number
+  dayOffset: number,
+  syllabusMode: SyllabusMode
 ): Promise<{ classes: DetailedClassSummary[]; errors: string[] }> {
   const classes = enrollment.courses
     .map((course) => ({
@@ -402,17 +417,14 @@ async function buildDetailedClassesForOffset(
       try {
         let syllabusPromise = syllabusCache.get(course.courseCode);
         if (!syllabusPromise) {
-          syllabusPromise = fetchSyllabusWithCache({
-            ...course,
-            academicYear: enrollment.academicYear,
-          });
+          syllabusPromise = loadSyllabus({ ...course, academicYear: enrollment.academicYear }, syllabusMode);
           syllabusCache.set(course.courseCode, syllabusPromise);
         }
         const record = await syllabusPromise;
         syllabus = buildDetailedClassNotes(record);
       } catch (error: unknown) {
         errors.push(
-          `Failed to fetch syllabus for ${course.courseName} (${course.courseCode}): ${
+          `Failed to load syllabus for ${course.courseName} (${course.courseCode}): ${
             error instanceof Error ? error.message : String(error)
           }`
         );
@@ -445,10 +457,17 @@ export type PrefetchedAceResults = {
   announcements: AnnouncementCollectionResult;
 };
 
+export type BuildSummaryOptions = {
+  /** 既定は cache-only（ブラウザを開かない）。日次の全取得（toyo:sync）だけ fetch を渡す */
+  syllabusMode?: SyllabusMode;
+};
+
 export async function buildDiscordSummary(
   enrollment: EnrollmentData,
-  prefetched?: PrefetchedAceResults
+  prefetched?: PrefetchedAceResults,
+  options: BuildSummaryOptions = {}
 ): Promise<DiscordSummary> {
+  const syllabusMode: SyllabusMode = options.syllabusMode ?? 'cache-only';
   const now = new Date();
   const courseNames = enrollment.courses.map((course) => course.courseName);
 
@@ -466,7 +485,7 @@ export async function buildDiscordSummary(
       ]);
 
   const coursework = await loadCoursework();
-  const nextClassNotes = await buildNextClassNotes(nextClass, enrollment);
+  const nextClassNotes = await buildNextClassNotes(nextClass, enrollment, syllabusMode);
   const sortedAssignments = sortAssignments(assignmentResult.assignments);
   const sortedContents = sortCourseContents(contentResult.contents);
   const sortedAnnouncements = announcementResult.announcements;
@@ -478,7 +497,8 @@ export async function buildDiscordSummary(
     sortedAnnouncements,
     coursework,
     now,
-    0
+    0,
+    syllabusMode
   );
   const tomorrowResult = await buildDetailedClassesForOffset(
     enrollment,
@@ -487,7 +507,8 @@ export async function buildDiscordSummary(
     sortedAnnouncements,
     coursework,
     now,
-    1
+    1,
+    syllabusMode
   );
 
   return {
