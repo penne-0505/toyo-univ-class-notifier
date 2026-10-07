@@ -19,7 +19,7 @@ Scripts（データ取得・core）
   ↓
 output/ ファイル群（キャッシュ）
   ↓
-Skills（LLMとの対話） / Discord Bot（定型閲覧）
+Skills（LLMとの対話） / Worker・toyo-data（クラウドのエージェント向け）
 ```
 
 Skillsは `.claude/commands/toyo.md` として定義。LLMが質問を受けたとき、このSkillがScriptを呼び出してデータを取得・回答する。
@@ -60,7 +60,7 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 使い分け:
 
-- `toyo:sync`: 履修情報・ACEお知らせ・課題・コンテンツ・祝日・bot用summaryをまとめて更新する。
+- `toyo:sync`: 履修情報・ACEお知らせ・課題・コンテンツ・祝日・集約 summary をまとめて更新する。
 - `toyo:check`: 保存済み `storageState` がポータルで有効か確認する。
 - `toyo:login`: GUI でログインし、保存済み `storageState` を更新する。
 - `toyo:refresh-session`: `toyo:login` の別名。期限切れ時に使う。
@@ -105,7 +105,7 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 ## データ配信（toyo-data）
 
-取得データは private repo `penne-0505/toyo-data`（ローカル clone: `~/toyo-data`）へ定期 push する。systemd ユーザータイマーで動き、Discord bot には依存しない（bot は `output/` を読むだけ）。
+取得データは private repo `penne-0505/toyo-data`（ローカル clone: `~/toyo-data`）へ定期 push する。systemd ユーザータイマーで動き。
 
 ```
 toyo-watch.timer (5分)  → toyo:watch ─ 変化あり → summary 再生成 → toyo:context --no-sync ─┐
@@ -113,7 +113,6 @@ toyo-coursework.timer (毎時:20) → toyo:coursework → context --no-sync ─�
 toyo-daily.timer (04:30) → toyo:daily (coursework/sync/credits/lottery/context) ──────────┤
                                                                                           ▼
                                        toyo:publish → ~/toyo-data → GitHub (private)
-Discord bot ← output/ を読むだけ（上記と独立）
 ```
 
 - 公開対象は allowlist（`output/toyo/**`、`output/bot/summary.json`、`data/**`）のみ。`artifacts/`・`playwright/`・`.env*` はコード上含まれない。`registration-candidates.json`（約 1.6MB）は `--include-candidates`（daily）のときだけ。
@@ -183,7 +182,7 @@ npm run toyo:health -- status        # アラート中のジョブがあれば�
 ## 同期後に確認するファイル
 
 - `output/bot/summary.json`
-  LLM や Discord bot が読む集約結果。`sourceStatus` でポータル・ACEの取得状況を確認。
+  全ソースを集約した summary（歴史的経緯で `bot/` 配下にある）。LLM エージェントが読む。`sourceStatus` でポータル・ACEの取得状況を確認。
 - `output/toyo/agent-context.json` / `output/toyo/agent-context.md`
   コーディングエージェントが最初に読む圧縮コンテキスト。`freshness`、`warnings`、今日/明日の授業、近い課題、重要なお知らせ、参照すべき source file を含む。
 - `output/toyo/registration-data.json`

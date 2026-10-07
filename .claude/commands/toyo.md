@@ -12,7 +12,7 @@
 ### それ以外の情報（毎回フェッチ）
 質問に答える前に必ず `npm run toyo:context` を実行すること。
 その後 `output/toyo/agent-context.md` または `output/toyo/agent-context.json` を読む。
-詳細確認が必要な場合は `output/bot/summary.json` と各 source file に戻る。
+詳細確認が必要な場合は集約 summary（`output/bot/summary.json`）と各 source file に戻る。
 
 ## 情報ソースのルーティング
 

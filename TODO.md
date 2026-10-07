@@ -37,22 +37,10 @@
 
 ---
 
-## Bot（定型閲覧層）
-
-- [x] Bot を作り直し（`models.py` / `summary_service.py` / `discord_bot.py` / `config.py`）
-  - スラッシュコマンド: `/today` `/tomorrow` `/assignments` `/announcements` `/status` `/refresh` `/setchannel`
-  - cronループ: 設定時刻に日次サマリー、授業N分前リマインド
-  - チャンネル設定: `/setchannel` + `TOYO_NOTIFY_CHANNEL_ID` 環境変数
-  - 通知時刻: `TOYO_NOTIFY_TIMES` 環境変数（カンマ区切り）
-  - `python-dotenv` 追加（`uv sync` 済み）
-  - `repositories/` ディレクトリは不要（削除可）
-
----
-
 ## ドキュメント
 
 - [x] `docs/toyo-automation-runbook.md` をSkillの決定事項に合わせて更新
-  - アーキテクチャ図（Scripts → Skills / Bot）
+  - アーキテクチャ図（Scripts → Skills / Worker）
   - 情報ソースのルーティング表
   - `fetchStatus` ルール（error / empty / success）
   - キャッシュルールの明記

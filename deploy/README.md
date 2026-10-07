@@ -1,6 +1,6 @@
 # デプロイ（systemd ユーザータイマー）
 
-取得データを private repo `penne-0505/toyo-data`（ローカル clone は `~/toyo-data`）へ定期 push する仕組みです。Discord bot とは独立しており、bot は `output/` を読むだけです。
+取得データを private repo `penne-0505/toyo-data`（ローカル clone は `~/toyo-data`）へ定期 push する仕組みです。読み手はクラウドのエージェント（Worker の REST / `toyo-data` repo）です。
 
 | ユニット | 間隔 | 内容 |
 | --- | --- | --- |

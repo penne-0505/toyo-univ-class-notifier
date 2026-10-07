@@ -6,14 +6,14 @@
 
 ### 1.1 目的
 
-東洋大学の学内システム（学務ポータル `g-sys.toyo.ac.jp` / LMS「ToyoNet-ACE」`www.ace.toyo.ac.jp`）に対し、保存済みブラウザセッションを用いた自動ログイン・スクレイピングを行い、履修情報・シラバス・課題・コースニュース・祝日を構造化データとして `output/` 配下に保存する。出力は LLM エージェントおよび Discord bot などの下流コンポーネントから参照されることを前提とする。
+東洋大学の学内システム（学務ポータル `g-sys.toyo.ac.jp` / LMS「ToyoNet-ACE」`www.ace.toyo.ac.jp`）に対し、保存済みブラウザセッションを用いた自動ログイン・スクレイピングを行い、履修情報・シラバス・課題・コースニュース・祝日を構造化データとして `output/` 配下に保存する。出力は LLM エージェントなどの下流コンポーネントから参照されることを前提とする。
 
 ### 1.2 スコープ
 
 本仕様の対象は `scripts/` 配下の TypeScript エントリポイント 9 本、共有ライブラリ 7 本、Python 補助スクリプト 1 本である。
 
 - **対象**: `scripts/*.ts`, `scripts/lib/*.ts`, `scripts/toyo-build-timetable.py`, `package.json` の npm scripts 定義
-- **対象外**: `bot/`（Discord bot、Python/uv プロジェクト）、`.claude/commands/`（LLM Skill 定義）、`tests/`、`docs/` の内容。ただしこれらは `output/` のファイル形式を消費するため、出力スキーマは下流互換を維持すること
+- **対象外**: `.claude/commands/`（LLM Skill 定義）、`tests/`、`docs/` の内容。ただしこれらは `output/` のファイル形式を消費するため、出力スキーマは下流互換を維持すること
 
 ### 1.3 処理フロー概要
 
@@ -86,7 +86,7 @@ toyo:context ──→ summary.json 等を圧縮 ──→ agent-context.json / 
 | `output/toyo/toyonet-ace-contents.json` | ACE コンテンツ取得 | コース掲示資料 |
 | `output/toyo/announcements.json` | ACE お知らせ取得 | コースニュース（カテゴリ分類済み） |
 | `output/toyo/academic-calendar.json` | 祝日取得 | 内閣府祝日データ |
-| `output/bot/summary.json` | 集約ビルダ | 下流コンポーネント用集約 JSON |
+| `output/bot/summary.json` | 集約ビルダ | 全ソース集約 JSON（歴史的経緯で `bot/` 配下） |
 | `output/toyo/agent-context.json` / `.md` | コンテキスト生成 | エージェント向け圧縮コンテキスト |
 
 ## 4. 環境変数

@@ -1,6 +1,6 @@
 # Toyo University Automation
 
-東洋大学の学内システム（学務ポータル / ToyoNet-ACE）から履修・課題・お知らせを取得し、LLMやDiscord botから利用できるようにするツール群です。
+東洋大学の学内システム（学務ポータル / ToyoNet-ACE）から履修・課題・お知らせを取得し、LLM エージェントから利用できるようにするツール群です。
 
 ## アーキテクチャ
 
@@ -8,7 +8,6 @@
 Scripts (scripts/)         ← データ取得 core (Playwright + TypeScript)
    ↓ output/ にキャッシュ
 Skill (.claude/commands/)  ← LLM の対話インターフェース
-Discord Bot (bot/)         ← 機械的な定型閲覧の薄い wrapper (Python + uv)
 toyo:publish               ← ~/toyo-data (GitHub, 正本) と Worker へ配信
    ↓ PUT
 Worker (worker/)           ← クラウドのエージェント向け REST (Cloudflare Workers + KV, Bearer キー必須)
@@ -16,8 +15,11 @@ Worker (worker/)           ← クラウドのエージェント向け REST (Clo
 
 - **Scripts**: 履修・シラバス・課題・お知らせ・祝日を取得して `output/` に保存する core 層
 - **Skill** (`.claude/commands/toyo.md`): Claude Code から `/project:toyo` で呼び出すLLM用の判断フロー
-- **Bot** (`bot/`): Slash コマンドと cron 通知を提供する Discord bot
 - **Worker** (`worker/`): 取得データを KV に持ち、クラウドのエージェントへ REST で返す（詳細は `worker/README.md`）
+
+データの読み手は LLM エージェント（Claude Code の Skill、または Worker の REST / `toyo-data` repo 経由のクラウドのエージェント）です。
+
+2026-10 に Discord bot は廃止しました。通知はこのマシンのデスクトップ通知（`toyo:health`。送り先は `.env.local` で Discord webhook / ntfy も選べます）が担い、外部からの鮮度確認はクラウドの秘書エージェントが `/v1/meta` の `publishedAt` と health で行います。
 
 ## クイックスタート
 
@@ -27,9 +29,6 @@ npm run toyo:login
 
 # 2. データを同期
 npm run toyo:sync
-
-# 3. Bot を起動（別端末で）
-cd bot && uv sync && uv run toyo-discord-bot
 ```
 
 セッションが切れたら `npm run toyo:refresh-session`（`toyo:login` の別名）で再ログインします。
@@ -78,7 +77,7 @@ cd bot && uv sync && uv run toyo-discord-bot
 | `output/toyo/academic-calendar.json` | 祝日データ |
 | `data/academic-schedule.json` | 学年暦（履修登録・抽選・追加登録・取消申請の期間、授業開始日など）。しおりから手書きの静的データ（git 管理）。履修登録関連の期間のみ置き、授業終了日・試験期間・休講振替・成績発表など学年暦の詳細はユーザーの Google カレンダーが正（`unknown` に列挙、ここでは埋めない） |
 | `data/grading-rules.json` | 科目ごとの成績配分（components）・足切り（cutoffs）。`toyo:grading-rules` の下書きを人が直したもの（`reviewed` で区別）。`agent-context` の各授業に `gradingRules` として載る |
-| `output/bot/summary.json` | 上記を集約したBot/Skill用JSON |
+| `output/bot/summary.json` | 全ソースを集約した summary（歴史的経緯で `bot/` 配下にある。Skill・Worker・toyo-data が読む） |
 | `output/toyo/agent-context.json` | エージェント用の圧縮コンテキスト（構造化JSON） |
 | `output/toyo/agent-context.md` | エージェント用の圧縮コンテキスト（Markdown） |
 | `output/toyo/registration-candidates.json` | 履修登録画面から取得した登録可能科目（選択ID `scheduleCd`、コマ、シラバス） |
@@ -110,11 +109,10 @@ npm run toyo:lottery                     # 抽選実施科目の当落を確認
 - 専用ブラウザプロファイル: `playwright/.profiles/toyo`
 - 保存セッション: `playwright/.auth/toyo-state.json`
 - セッションメタデータ: `playwright/.auth/toyo-session.json`
-- Bot状態: `state/discord-bot-state.json`
 
 ## 環境変数
 
-`.env.local`（リポジトリルート）または `bot/.env`（Bot用）に保存できます。
+`.env.local`（リポジトリルート）に保存できます。
 
 ### スクリプト用 (.env.local)
 
@@ -126,21 +124,11 @@ npm run toyo:lottery                     # 抽選実施科目の当落を確認
 | `TOYO_PORTAL_URL` | ポータルURL上書き |
 | `TOYO_API_URL` / `TOYO_API_WRITE_KEY` | Worker（`worker/`）への配信先と書き込みキー。両方あるときだけ publish が PUT する |
 
-### Bot用 (bot/.env)
-
-| 変数 | 内容 |
-|------|------|
-| `DISCORD_TOKEN` | **必須** |
-| `DISCORD_GUILD_ID` | 任意。開発時のSlash Command即時反映用 |
-
-通知先チャンネル・通知時刻・リマインド分は環境変数ではなく **Slashコマンドで設定**します。通知時刻の既定値は `07:00` / `22:00`（JST）で、日次サマリー内に新規課題と期限順の未提出上位を含めます（`bot/README.md` 参照）。
-
 ## ドキュメント
 
 - [`docs/basic-info.md`](docs/basic-info.md) — 授業時間、キャンパスアクセス、入構ルールなど固定情報
 - [`docs/toyo-automation-runbook.md`](docs/toyo-automation-runbook.md) — 運用手順、セッション喪失時の回復、情報ソースのルーティング表
 - [`.claude/commands/toyo.md`](.claude/commands/toyo.md) — LLM用Skill定義（決定フロー・回答テンプレート）
-- [`bot/README.md`](bot/README.md) — Discord botの設定・コマンド一覧
 
 ## スプレッドシート出力（Python依存）
 
@@ -157,7 +145,7 @@ uv pip install --python .venv/bin/python openpyxl pandas
 2. `npm run toyo:check` で保存セッションが有効か確認
 3. 必要なときに `npm run toyo:sync` を走らせて最新化
 4. エージェントに授業相談を投げる前に `npm run toyo:context` で圧縮コンテキストを生成
-5. Bot を起動しておけば cron で自動同期 + 通知（同期失敗は3回連続後、1日1回だけ警告）
+5. 定期ジョブ（systemd タイマー、`deploy/README.md`）が自動で同期・配信し、失敗が続くと `toyo:health` が通知する
 
 `toyo:context` は既定で `summary.json` が 30 分より古い場合に `toyo:sync` を試みます。既存出力だけで確認したい場合は `npm run toyo:context -- --no-sync` を使います。標準出力は `[context] <JST> today=n tomorrow=m warnings=k` の 1 行だけで（journal を汚さないため）、全文は `output/toyo/agent-context.md` を読むか `--print` を付けます。JSON を標準出力したい場合は `npm --silent run toyo:context -- --print --format json` です。定期ジョブが失敗中・停止中のときは Warnings に載ります。
 
