@@ -36,28 +36,28 @@ const reminderBaseUrl = 'https://www.ace.toyo.ac.jp/ct/home_library_reminder';
 const reminderUrl = `${reminderBaseUrl}?count=50`;
 export const announcementsOutputPath = path.join(outputDir, 'announcements.json');
 
-function categorize(title: string): AnnouncementCategory {
+export function categorize(title: string): AnnouncementCategory {
   if (title.includes('休講')) return '休講';
   if (title.includes('補講')) return '補講';
   if (title.includes('教室変更') || title.includes('教室移動')) return '教室変更';
   return 'その他';
 }
 
-function toJstIso(raw: string): string | null {
+export function toJstIso(raw: string): string | null {
   const normalized = raw.replace(/\s+/g, ' ').trim();
   if (!/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(?::\d{2})?)?$/.test(normalized)) return null;
   const withTime = normalized.includes(' ') ? normalized : `${normalized} 00:00:00`;
   return `${withTime.replace(' ', 'T')}+09:00`;
 }
 
-function extractDateHint(text: string): string | null {
+export function extractDateHint(text: string): string | null {
   const match = text.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
   if (!match) return null;
   const [, y, m, d] = match;
   return `${y}-${String(Number(m)).padStart(2, '0')}-${String(Number(d)).padStart(2, '0')}`;
 }
 
-function parseDetailText(text: string): { title: string | null; newsUrl: string | null } {
+export function parseDetailText(text: string): { title: string | null; newsUrl: string | null } {
   // [タイトル] : 第３回授業資料につきまして
   const titleMatch = text.match(/\[タイトル\]\s*[：:]\s*(.+?)(?:\s*\[|\s*-{4,}|$)/);
   // PC : https://www.ace.toyo.ac.jp/ct/course_XXXXXXXX_news_XXXXXXXX

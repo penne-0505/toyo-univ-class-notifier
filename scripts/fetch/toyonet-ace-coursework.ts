@@ -115,7 +115,7 @@ const readSubmitLogScript = `(() => {
   return { rows: out, nextHref: (() => { const a = [...document.querySelectorAll('.navigator a')].find((x) => /次へ/.test(x.textContent || '')); return a ? a.getAttribute('href') : null; })() };
 })()`;
 
-type PageRow = {
+export type PageRow = {
   head: string[];
   cells: string[];
   anchors: Array<{ href: string; text: string }>;
@@ -131,7 +131,7 @@ type CoursePageSnapshot = {
   nextHref: string | null;
 };
 
-type SubmitLogSnapshot = {
+export type SubmitLogSnapshot = {
   rows: Array<{
     date: string;
     time: string;
@@ -201,7 +201,7 @@ export function parseGrades(snapshot: { grades: Array<{ title: string; score: st
     .map((g) => ({ title: g.title, score: g.score && g.score !== '-' ? g.score : null, note: g.note || null }));
 }
 
-function parseSubmitLog(snapshot: SubmitLogSnapshot): CourseworkSubmission[] {
+export function parseSubmitLog(snapshot: SubmitLogSnapshot): CourseworkSubmission[] {
   const out: CourseworkSubmission[] = [];
   for (const row of snapshot.rows) {
     const itemLink = row.anchors.find((a) => /course_\d+_(report|query|survey|drill|project)_\d+/.test(a.href));
@@ -220,7 +220,7 @@ function parseSubmitLog(snapshot: SubmitLogSnapshot): CourseworkSubmission[] {
   return out;
 }
 
-function matchRegisteredCourse(
+export function matchRegisteredCourse(
   codes: string[],
   aceName: string,
   registered: Course[]

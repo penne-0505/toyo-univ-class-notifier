@@ -149,6 +149,126 @@ export async function writeEnrollmentArtifacts(data: EnrollmentData): Promise<vo
   await fs.writeFile(markdownOutputPath, markdown, 'utf8');
 }
 
+/**
+ * 履修登録確認表照会ページの本文（innerText）と <title> から、登録科目を読み取る純粋関数。
+ * 行はタブ区切り。空欄も位置情報として意味を持つ。詳しい行の形は下のコメントを参照。
+ */
+export function parseEnrollmentText(
+  bodyText: string,
+  pageTitle: string
+): Omit<EnrollmentData, 'fetchedAt' | 'sourceUrl'> {
+  const normalizedText = bodyText.replace(/\u00A0/g, ' ');
+  const lines = normalizedText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const studentNumberMatch = normalizedText.match(/学籍番号\s+([0-9]+)/);
+  const academicYearMatch = normalizedText.match(/開講年度\s+([0-9]{4})/);
+  const nameLineIndex = lines.findIndex((line) => line.includes('学籍番号'));
+  const kanaLine = nameLineIndex >= 0 ? lines[nameLineIndex].match(/氏名\s+(.+)$/)?.[1] ?? '' : '';
+  const nameLine = nameLineIndex >= 0 ? lines[nameLineIndex + 1] ?? '' : '';
+
+  const courses: Course[] = [];
+  let currentSemesterLabel = '';
+  let currentDay = '';
+
+  for (const line of lines) {
+    if (
+      line === '曜日 時限 学期 授業コード 科目ナンバリング 科目名 実施形態 担当者 教室 キャンパス 単位'
+    ) {
+      continue;
+    }
+    if (/学期$/.test(line) && !line.includes('授業')) {
+      currentSemesterLabel = line;
+      continue;
+    }
+    if (line.startsWith('注）')) {
+      break;
+    }
+
+    // 行はタブ区切り。空欄も位置情報として意味を持つので filter せずに扱う。
+    //   通常行:   曜日 \t 時限 \t 学期 \t (空) \t 授業コード \t ナンバリング \t 科目名 \t 実施形態 \t 担当者 \t 教室 \t キャンパス \t 単位
+    //   集中行:   集中その他 \t (空) \t 授業コード \t ...（時限・学期なし）
+    //   継続行:   (空) \t 授業コード \t ...（同じ曜日/集中ブロックの 2 件目以降）
+    // 授業コード（英数字 10 桁）の位置を基準に前後を読む。
+    const parts = line.split('\t').map((part) => part.trim());
+    const codeIndex = parts.findIndex((part) => /^[0-9A-Z]{10}$/.test(part));
+    if (codeIndex < 0 || parts.length < codeIndex + 8) {
+      continue;
+    }
+    const head = parts.slice(0, codeIndex).filter(Boolean);
+    const first = head[0] ?? '';
+    let day = '';
+    let period = '';
+    let term = '';
+    if (WEEKDAYS.includes(first)) {
+      day = first;
+      currentDay = day;
+      period = head[1] ?? '';
+      term = head[2] ?? '';
+    } else if (first.startsWith('集中')) {
+      day = INTENSIVE_DAY_LABEL;
+      currentDay = day;
+      term = head[1] ?? '';
+    } else if (head.length === 0) {
+      day = currentDay;
+    } else {
+      // 曜日を持たない継続行（時限 学期 の 2 つだけ、など）
+      day = currentDay;
+      if (/^[0-9０-９]+$/.test(first)) {
+        period = first;
+        term = head[1] ?? '';
+      } else {
+        term = first;
+      }
+    }
+    if (day === INTENSIVE_DAY_LABEL) {
+      period = '';
+    }
+
+    const courseCode = parts[codeIndex] || '';
+    const numbering = parts[codeIndex + 1] || '';
+    const courseName = parts[codeIndex + 2] || '';
+    const deliveryMode = parts[codeIndex + 3] || '';
+    const instructor = parts[codeIndex + 4] || '';
+    const room = parts[codeIndex + 5] || '';
+    const campus = parts[codeIndex + 6] || '';
+    const creditsRaw = parts[codeIndex + 7] || '';
+
+    if (!day || !courseCode || !courseName) {
+      continue;
+    }
+
+    courses.push({
+      semesterLabel: currentSemesterLabel,
+      day,
+      period: normalizeDigits(period),
+      term,
+      courseCode,
+      numbering,
+      courseName,
+      deliveryMode,
+      instructor,
+      room,
+      campus,
+      credits: creditsRaw
+        ? Number(normalizeDigits(creditsRaw).replace(/[^\d.-]/g, ''))
+        : null,
+    });
+  }
+
+  return {
+    fetchStatus: computeFetchStatus(pageTitle, courses),
+    pageTitle,
+    studentNumber: studentNumberMatch?.[1] ?? '',
+    studentNameKana: kanaLine,
+    studentName: nameLine,
+    academicYear: academicYearMatch?.[1] ?? '',
+    courses,
+  };
+}
+
 export async function scrapeEnrollmentData(): Promise<EnrollmentData> {
   const { browser, context } = await launchStateContext({
     headless: shouldRunHeadless(true),
@@ -168,117 +288,17 @@ export async function scrapeEnrollmentData(): Promise<EnrollmentData> {
     });
     const bodyText = await page.locator('body').innerText();
     const pageTitle = await page.title();
-    const normalizedText = bodyText.replace(/\u00A0/g, ' ');
-    const lines = normalizedText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    const studentNumberMatch = normalizedText.match(/学籍番号\s+([0-9]+)/);
-    const academicYearMatch = normalizedText.match(/開講年度\s+([0-9]{4})/);
-    const nameLineIndex = lines.findIndex((line) => line.includes('学籍番号'));
-    const kanaLine = nameLineIndex >= 0 ? lines[nameLineIndex].match(/氏名\s+(.+)$/)?.[1] ?? '' : '';
-    const nameLine = nameLineIndex >= 0 ? lines[nameLineIndex + 1] ?? '' : '';
-
-    const courses: Course[] = [];
-    let currentSemesterLabel = '';
-    let currentDay = '';
-
-    for (const line of lines) {
-      if (
-        line === '曜日 時限 学期 授業コード 科目ナンバリング 科目名 実施形態 担当者 教室 キャンパス 単位'
-      ) {
-        continue;
-      }
-      if (/学期$/.test(line) && !line.includes('授業')) {
-        currentSemesterLabel = line;
-        continue;
-      }
-      if (line.startsWith('注）')) {
-        break;
-      }
-
-      // 行はタブ区切り。空欄も位置情報として意味を持つので filter せずに扱う。
-      //   通常行:   曜日 \t 時限 \t 学期 \t (空) \t 授業コード \t ナンバリング \t 科目名 \t 実施形態 \t 担当者 \t 教室 \t キャンパス \t 単位
-      //   集中行:   集中その他 \t (空) \t 授業コード \t ...（時限・学期なし）
-      //   継続行:   (空) \t 授業コード \t ...（同じ曜日/集中ブロックの 2 件目以降）
-      // 授業コード（英数字 10 桁）の位置を基準に前後を読む。
-      const parts = line.split('\t').map((part) => part.trim());
-      const codeIndex = parts.findIndex((part) => /^[0-9A-Z]{10}$/.test(part));
-      if (codeIndex < 0 || parts.length < codeIndex + 8) {
-        continue;
-      }
-      const head = parts.slice(0, codeIndex).filter(Boolean);
-      const first = head[0] ?? '';
-      let day = '';
-      let period = '';
-      let term = '';
-      if (WEEKDAYS.includes(first)) {
-        day = first;
-        currentDay = day;
-        period = head[1] ?? '';
-        term = head[2] ?? '';
-      } else if (first.startsWith('集中')) {
-        day = INTENSIVE_DAY_LABEL;
-        currentDay = day;
-        term = head[1] ?? '';
-      } else if (head.length === 0) {
-        day = currentDay;
-      } else {
-        // 曜日を持たない継続行（時限 学期 の 2 つだけ、など）
-        day = currentDay;
-        if (/^[0-9０-９]+$/.test(first)) {
-          period = first;
-          term = head[1] ?? '';
-        } else {
-          term = first;
-        }
-      }
-      if (day === INTENSIVE_DAY_LABEL) {
-        period = '';
-      }
-
-      const courseCode = parts[codeIndex] || '';
-      const numbering = parts[codeIndex + 1] || '';
-      const courseName = parts[codeIndex + 2] || '';
-      const deliveryMode = parts[codeIndex + 3] || '';
-      const instructor = parts[codeIndex + 4] || '';
-      const room = parts[codeIndex + 5] || '';
-      const campus = parts[codeIndex + 6] || '';
-      const creditsRaw = parts[codeIndex + 7] || '';
-
-      if (!day || !courseCode || !courseName) {
-        continue;
-      }
-
-      courses.push({
-        semesterLabel: currentSemesterLabel,
-        day,
-        period: normalizeDigits(period),
-        term,
-        courseCode,
-        numbering,
-        courseName,
-        deliveryMode,
-        instructor,
-        room,
-        campus,
-        credits: creditsRaw
-          ? Number(normalizeDigits(creditsRaw).replace(/[^\d.-]/g, ''))
-          : null,
-      });
-    }
-
+    const parsed = parseEnrollmentText(bodyText, pageTitle);
     const result: EnrollmentData = {
-      fetchStatus: computeFetchStatus(pageTitle, courses),
+      fetchStatus: parsed.fetchStatus,
       fetchedAt: new Date().toISOString(),
       sourceUrl: page.url(),
-      pageTitle,
-      studentNumber: studentNumberMatch?.[1] ?? '',
-      studentNameKana: kanaLine,
-      studentName: nameLine,
-      academicYear: academicYearMatch?.[1] ?? '',
-      courses,
+      pageTitle: parsed.pageTitle,
+      studentNumber: parsed.studentNumber,
+      studentNameKana: parsed.studentNameKana,
+      studentName: parsed.studentName,
+      academicYear: parsed.academicYear,
+      courses: parsed.courses,
     };
     return result;
   } finally {

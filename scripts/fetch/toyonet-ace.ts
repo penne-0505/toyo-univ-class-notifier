@@ -58,7 +58,7 @@ export type CourseContentCollectionResult = {
   errors: string[];
 };
 
-type PendingAssignmentRow = {
+export type PendingAssignmentRow = {
   type: string;
   title: string;
   courseName: string;
@@ -223,7 +223,7 @@ function assignmentIdFromHref(href: string | null): string | null {
   }
 }
 
-function toAssignment(row: PendingAssignmentRow): Assignment | null {
+export function toAssignment(row: PendingAssignmentRow): Assignment | null {
   const title = normalizeText(row.title);
   const courseName = normalizeText(row.courseName);
   if (!title || !courseName) {

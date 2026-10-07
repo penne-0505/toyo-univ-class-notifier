@@ -1,0 +1,32 @@
+English
+※自己登録許可期間中
+2026-10-08 (Thu)
+
+架空 太郎 | 設定 | ログアウト
+架空 太郎さんのマイページ
+ToyoNet-ACE - サンプル統計学B2 - コースニュース掲示のお知らせ / Sample Statistics B2 - Notice of Course News
+送信先 : 9999999999@example.invalid
+送信日時 : 2026-10-07 11:25
+ToyoNet-ACE からのお知らせです。
+[サンプル統計学B2] に、コースニュースが掲示されました。
+
+--コースニュース情報--
+[コース名] : サンプル統計学B2
+[タイトル] : 【休講】第3回講義資料について（公開しました）
+[作成者] : 架空 一郎
+--------------------
+
+ToyoNet-ACE にログインし、内容を確認してください。
+PC : https://www.ace.toyo.ac.jp/ct/course_99000001_news_9000051
+
+※このメールは ToyoNet-ACE が自動送信しています。返信はできません。
+※リマインダ受信設定を変更する場合はリマインダ設定画面から行ってください。
+https://www.ace.toyo.ac.jp/ct/home_preferences_reminder
+
+Notice from ToyoNet-ACE.
+-----News info-----
+Course: Sample Statistics B2
+Title: 【休講】第3回講義資料について（公開しました）
+Author: Taro Kaku
+--------------------
+PC: https://www.ace.toyo.ac.jp/ct/course_99000001_news_9000051

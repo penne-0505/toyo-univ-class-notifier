@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test scripts/dev/*.test.ts scripts/dev/parsers/*.test.ts",
     "toyo:login": "tsx ./scripts/toyo-login.ts",
     "toyo:check": "tsx ./scripts/toyo-check.ts",
     "toyo:export-enrollment": "tsx ./scripts/toyo-export-enrollment.ts",

@@ -97,7 +97,7 @@ scripts/
   publish/    配信層。toyo-data（git）と Worker に送る
   jobs/       ジョブ。複数の段をつなぐ（watch / coursework / daily / sync、toyo:build の 3 段、health）
   lib/        共通（セッション・ブラウザ起動、env、パス、科目キー、正規化、health、notify など）
-  dev/        開発用ツールとテスト（npm scripts からは呼ばない）
+  dev/        開発用ツールとテスト（`npm test`。parsers/ にパーサのテスト、fixtures/ に合成した入力データ。公開前検査 `check-public-privacy.ts`）
 ```
 
 判断の基準: ネットワーク・ブラウザを使うものは `fetch/`、ファイルだけ読んで派生物を作るものは `build/`、外部に送るものは `publish/`、複数の段をつなぐものは `jobs/`。純粋なパーサ（テキスト → JSON）は取得関数と同じファイルに置き、export する。

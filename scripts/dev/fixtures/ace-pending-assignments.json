@@ -1,0 +1,38 @@
+[
+ {
+  "type": "レポート",
+  "title": "第２回リフレクション",
+  "courseName": "サンプル統計学B2",
+  "opensAtRaw": "2026-10-05 09:00",
+  "dueAtRaw": "2026-10-11 23:00",
+  "periodRaw": "2026-10-05 09:00 ～ 2026-10-11 23:00",
+  "assignmentHref": "course_99000001_report_9000012"
+ },
+ {
+  "type": "小テスト",
+  "title": "第3回ミニッツ・ペーパー",
+  "courseName": "架空の経営学Ａ",
+  "opensAtRaw": "2026-10-06 18:15",
+  "dueAtRaw": "2026-10-12 19:55",
+  "periodRaw": "2026-10-06 18:15 ～ 2026-10-12 19:55",
+  "assignmentHref": "course_99000004_query_9000041"
+ },
+ {
+  "type": "アンケート",
+  "title": "授業アンケート",
+  "courseName": "デモ演習C1",
+  "opensAtRaw": "",
+  "dueAtRaw": "",
+  "periodRaw": "",
+  "assignmentHref": null
+ },
+ {
+  "type": "レポート",
+  "title": "  ",
+  "courseName": "デモ演習C1",
+  "opensAtRaw": "",
+  "dueAtRaw": "",
+  "periodRaw": "",
+  "assignmentHref": null
+ }
+]

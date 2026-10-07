@@ -31,7 +31,7 @@ scripts/
   publish/    配信層: toyo-data（git）と Worker へ送る
   jobs/       ジョブ: 複数の段をつなぐ（watch / coursework / daily / sync、toyo:build の 3 段、health）
   lib/        共通: セッション・ブラウザ起動、env、パス、科目キー、正規化、health、notify
-  dev/        開発用ツールとテスト（`npx tsx --test scripts/dev/*.test.ts`）
+  dev/        開発用ツールとテスト（`npm test`）。parsers/ はパーサのテスト、fixtures/ は合成した入力データ
 ```
 
 判断の基準は、ネットワーク・ブラウザを使うものは `fetch/`、ファイルだけ読んで派生物を作るものは `build/`、外部に送るものは `publish/`、複数の段をつなぐものは `jobs/`。コマンド名と本体ファイルの対応は `SPEC.md` の §5、各層の詳細は §3.3 と `docs/design/three-layer-refactor.md`。`build/` と `lib/` の純粋モジュールがブラウザ・ネットワークを読み込まないことは `scripts/dev/course-index.test.ts` が検査する。
@@ -141,6 +141,34 @@ npm run toyo:lottery                     # 抽選実施科目の当落を確認
 | `TOYO_HEADLESS=0\|1` | headed/headless強制 |
 | `TOYO_PORTAL_URL` | ポータルURL上書き |
 | `TOYO_API_URL` / `TOYO_API_WRITE_KEY` | Worker（`worker/`）への配信先と書き込みキー。両方あるときだけ publish が PUT する |
+
+## 開発
+
+このリポジトリは**公開**です。本人の履修科目・学部・学年・成績・学籍番号・氏名・鍵はコミットしません（実データは `output/`（git 管理外）と非公開の `toyo-data` にあります）。
+
+### テスト
+
+```bash
+npm test             # scripts/dev/*.test.ts と scripts/dev/parsers/*.test.ts（node:test + tsx。ネットワーク・ポータル不要）
+npm run typecheck
+```
+
+- `scripts/dev/parsers/` はポータル・ACE のページから文字列を読む部分（履修登録確認表、単位数集計、履修修得科目、抽選結果、ACE の提出状況・課題・お知らせ、シラバスの成績評価の抽出、ジョブの失敗検知）のテスト。取得（Playwright）と解釈（純粋関数）を分けてあり、テストは解釈だけを対象にする。
+- パーサを直したときは、`scripts/dev/fixtures/` の入力に事例を足して回帰ケースにする。
+
+### fixtures の方針
+
+- `scripts/dev/fixtures/` には**合成データだけ**を置く。本物の履修・成績・氏名・学籍番号・担当者・授業コードは入れない。
+- 実ページの構造（タブ区切り、行の並び、見出し、注記）は保ち、科目名・授業コード・担当者・成績・学籍番号・氏名だけを架空のものに差し替える。構造の確認に実ページを取得したときは `tmp/`（git 管理外）に保存し、コミットしない。
+- 例外はシラバスの成績評価欄の文章（大学が公開している情報）。科目名・担当者が文中に無い範囲で使う。
+
+### 公開前の検査
+
+```bash
+npx tsx scripts/dev/check-public-privacy.ts [--include-untracked]
+```
+
+git 管理下の全テキストファイルに、ローカルの個人データ（`output/toyo/registration-data.json` と `data/grading-rules.json` の科目名・授業コード・担当者、学籍番号・氏名、所属が分かる語、`~/.config/toyo-data-api/keys.json` のキー）が含まれていないかを調べます。ヒットは `ファイル:行 [種別]` で出し（値は出さない）、1 件でもあれば終了コード 1 です。コミットや push の前に実行してください。これらのファイルが無い環境では該当する検査をスキップします。
 
 ## ドキュメント
 
