@@ -16,7 +16,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { type EnrollmentData, jsonOutputPath, outputDir } from './lib/toyo-enrollment';
-import { formatSyllabusTimetable, type SyllabusRecord } from './lib/toyo-syllabus';
+import { formatSyllabusTimetable } from './lib/toyo-syllabus';
+import { type SyllabusRecord } from './lib/syllabus-cache';
+import { syllabusFileStem } from './lib/course-code';
 import { readPool } from './lib/syllabus-pool';
 import { writeSyllabusArtifacts } from './toyo-fetch-syllabus';
 
@@ -49,10 +51,6 @@ type CandidatesFile = {
   academicYear: string;
   candidates: Candidate[];
 };
-
-function safeStem(code: string): string {
-  return code.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
-}
 
 async function exists(file: string): Promise<boolean> {
   try {
@@ -133,7 +131,7 @@ export async function main(): Promise<void> {
     const found = byCode.get(course.courseCode);
     const candidate = found?.candidate;
     const syllabus = candidate?.syllabus;
-    const jsonPath = path.join(syllabusOutputDir, `${safeStem(course.courseCode)}.json`);
+    const jsonPath = path.join(syllabusOutputDir, `${syllabusFileStem(course.courseCode)}.json`);
     if (!found || !candidate || !syllabus) {
       // 既にキャッシュがある科目（別学期など）は欠落扱いにしない
       if (!(await exists(jsonPath))) missing.push(`${course.courseCode} ${course.courseName}`);

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { syllabusFileStem } from './course-code';
 import { outputDir } from './toyo-paths';
 
 /**
@@ -47,7 +48,7 @@ export type PoolEntry = {
 };
 
 export function poolFileName(courseCode: string): string {
-  return `${courseCode.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)}.json`;
+  return `${syllabusFileStem(courseCode)}.json`;
 }
 
 async function exists(file: string): Promise<boolean> {

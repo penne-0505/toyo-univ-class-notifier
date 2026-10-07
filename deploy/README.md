@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `toyo-watch` | 5 分ごと（`*:0/5`） | ACE の未提出課題とお知らせだけ取得し、変化があれば summary / agent-context を再生成して publish |
 | `toyo-daily` | 毎日 04:30 JST（`Persistent=true`） | 全取得（coursework → sync → credits → lottery → context）→ `toyo:publish --include-candidates --force` |
-| `toyo-coursework` | 毎時 :20 | ACE のコース別提出状況（レポート / 小テスト / アンケート / 成績 / 提出記録）を取得 → summary 再生成 → `toyo:context -- --no-sync` → `toyo:publish`。`flock -w 600` でロック待ち、`TimeoutStartSec=900` |
+| `toyo-coursework` | 毎時 :20 | ACE のコース別提出状況（レポート / 小テスト / アンケート / 成績 / 提出記録）を取得 → `toyo:build`（index → summary → context）→ `toyo:context -- --no-sync`（互換のため残しており、context を作り直すだけ）→ `toyo:publish`。`flock -w 600` でロック待ち、`TimeoutStartSec=900` |
 
 - watch・daily・coursework は `flock /tmp/toyo-fetch.lock` で排他します（Playwright セッションは同時に 1 つ）。watch はロック中なら何もせず正常終了（終了コード 75 を成功扱い）、daily は最大 15 分、coursework は最大 10 分ロックを待ちます。
 - watch は連続失敗 2 回で 15 分、4 回で 30 分スキップします（`state/watch-state.json`）。成功すると解除されます。systemd 側は 5 分固定のままです。

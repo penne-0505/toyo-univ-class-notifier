@@ -7,7 +7,7 @@ import {
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
 } from './toyo';
-import { dataDir, outputDir, repoRoot } from './toyo-paths';
+import { dataDir, outputDir, registrationDataPath, repoRoot } from './toyo-paths';
 
 export type Course = {
   semesterLabel: string;
@@ -58,7 +58,7 @@ function computeFetchStatus(pageTitle: string, courses: Course[]): FetchStatus {
 
 export { repoRoot, outputDir, dataDir };
 export const spreadsheetDir = path.join(repoRoot, 'output', 'spreadsheet');
-export const jsonOutputPath = path.join(outputDir, 'registration-data.json');
+export const jsonOutputPath = registrationDataPath;
 export const markdownOutputPath = path.join(outputDir, 'registration-summary.md');
 export const workbookOutputPath = path.join(spreadsheetDir, 'toyo-timetable.xlsx');
 const confirmationUrl = 'https://g-sys.toyo.ac.jp/univision/action/in/f08/Usin080111';

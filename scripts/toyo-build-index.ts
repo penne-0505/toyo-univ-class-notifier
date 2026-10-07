@@ -40,17 +40,18 @@ async function listFiles(dir: string): Promise<string[]> {
   }
 }
 
-export async function readCourseIndexInputs(): Promise<CourseIndexInputs> {
+/** 入力を読む。dirs を渡すと、output/toyo/ と data/ の代わりにそのディレクトリを読む（scripts/dev/build-from-golden.ts 用）。 */
+export async function readCourseIndexInputs(dirs: { outputDir: string; dataDir: string } = { outputDir, dataDir }): Promise<CourseIndexInputs> {
   const candidateFiles = ['registration-candidates.json', 'registration-candidates.regular.json', 'registration-candidates.add.json'];
   const candidates = (
-    await Promise.all(candidateFiles.map((name) => readJson<CandidatesInput>(path.join(outputDir, name))))
+    await Promise.all(candidateFiles.map((name) => readJson<CandidatesInput>(path.join(dirs.outputDir, name))))
   ).filter((file): file is CandidatesInput => file !== null && Array.isArray(file.candidates));
   return {
-    registration: await readJson<RegistrationInput>(path.join(outputDir, 'registration-data.json')),
-    coursework: await readJson<CourseworkInput>(path.join(outputDir, 'toyonet-ace-coursework.json')),
+    registration: await readJson<RegistrationInput>(path.join(dirs.outputDir, 'registration-data.json')),
+    coursework: await readJson<CourseworkInput>(path.join(dirs.outputDir, 'toyonet-ace-coursework.json')),
     candidates,
-    syllabusFiles: await listFiles(path.join(outputDir, 'syllabus')),
-    gradingRules: await readJson<GradingRulesInput>(path.join(dataDir, 'grading-rules.json')),
+    syllabusFiles: await listFiles(path.join(dirs.outputDir, 'syllabus')),
+    gradingRules: await readJson<GradingRulesInput>(path.join(dirs.dataDir, 'grading-rules.json')),
     academicSchedule: loadAcademicSchedule(),
   };
 }

@@ -8,7 +8,9 @@ import {
   jsonOutputPath,
   outputDir,
 } from './lib/toyo-enrollment';
-import { fetchSyllabus, type SyllabusRecord } from './lib/toyo-syllabus';
+import { syllabusFileStem } from './lib/course-code';
+import { type SyllabusRecord } from './lib/syllabus-cache';
+import { fetchSyllabus } from './lib/toyo-syllabus';
 
 const syllabusOutputDir = path.join(outputDir, 'syllabus');
 
@@ -148,14 +150,6 @@ function findCourse(courses: Course[], options: CliOptions): Course {
   return matches[0]!;
 }
 
-function safeFileStem(value: string): string {
-  return value
-    .replace(/[\\/:*?"<>|]+/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-}
-
 export function buildSyllabusMarkdown(course: Course, record: SyllabusRecord): string {
   const lines = [
     `# ${record.courseName || course.courseName}`,
@@ -196,7 +190,7 @@ export async function writeSyllabusArtifacts(
   record: SyllabusRecord
 ): Promise<{ jsonPath: string; markdownPath: string }> {
   await fs.mkdir(syllabusOutputDir, { recursive: true });
-  const stem = safeFileStem(record.courseCode || course.courseCode || course.courseName);
+  const stem = syllabusFileStem(record.courseCode || course.courseCode || course.courseName);
   const jsonPath = path.join(syllabusOutputDir, `${stem}.json`);
   const markdownPath = path.join(syllabusOutputDir, `${stem}.md`);
 

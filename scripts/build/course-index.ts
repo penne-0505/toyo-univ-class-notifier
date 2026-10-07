@@ -8,6 +8,7 @@
  * 突き合わせの順序: 授業コード → courseKey（科目名の正規化キー）。
  */
 import { courseKey } from '../lib/course-key';
+import { inferScheduleCd, syllabusFileStem } from '../lib/course-code';
 import { courseInSemesterOn, jstDateString, semesterLabelFor, type AcademicSchedule } from '../lib/toyo-academic-schedule';
 
 // ---------- 入力（必要なフィールドだけを持つ構造的な型。取得層の型には依存しない） ----------
@@ -88,16 +89,6 @@ export type CourseIndex = {
 export const WARNING_NO_SYLLABUS = 'シラバスのキャッシュが無い';
 export const WARNING_NO_ACE_COURSE = 'ACE のコース一覧にまだ無い（登録の反映待ちの可能性）';
 export const WARNING_NO_GRADING_RULES = '評価ルールが無い（data/grading-rules.json）';
-
-/** 授業コード → ポータルの時間割コード。AI基礎（XJ13900003 → 34XJ128700-002）のように合わない科目があるため、推定扱い。 */
-export function inferScheduleCd(courseCode: string): string {
-  return `34${courseCode.slice(0, 7)}0-${courseCode.slice(7)}`;
-}
-
-/** シラバスのキャッシュのファイル名（toyo-seed-syllabus / toyo-fetch-syllabus の safeStem と同じ規則）。 */
-export function syllabusFileStem(courseCode: string): string {
-  return courseCode.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
-}
 
 type AceCourse = CourseworkInput['courses'][number];
 

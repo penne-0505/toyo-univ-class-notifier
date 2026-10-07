@@ -1,6 +1,6 @@
 import fsSync from 'node:fs';
 import path from 'node:path';
-import { dataDir } from './toyo-enrollment';
+import { dataDir } from './toyo-paths';
 
 export type GradingComponentKind =
   | 'final-exam'

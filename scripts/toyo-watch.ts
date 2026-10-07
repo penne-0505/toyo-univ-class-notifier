@@ -2,22 +2,17 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { jsonOutputPath, repoRoot, type EnrollmentData } from './lib/toyo-enrollment';
-import {
-  collectToyoNetAceAssignments,
-  toyoNetAceAssignmentsOutputPath,
-  toyoNetAceContentsOutputPath,
-  type CourseContentCollectionResult,
-} from './lib/toyonet-ace';
+import { repoRoot } from './lib/toyo-paths';
+import { collectToyoNetAceAssignments, toyoNetAceAssignmentsOutputPath } from './lib/toyonet-ace';
 import { announcementsOutputPath, collectToyoNetAceAnnouncements } from './lib/toyo-announcements';
-import { buildDiscordSummary, writeDiscordSummary } from './lib/toyo-summary';
 import { formatJst, normalizedHash } from './lib/toyo-normalize';
+import { runBuild } from './toyo-build';
 import { publish } from './toyo-publish';
 
 /**
  * ACE の未提出課題とリマインダだけを取得し、変化があるときだけ
- * summary / agent-context を再生成して publish する（5 分間隔の systemd timer 用）。
+ * toyo:build（index → summary → agent-context）を実行して publish する（5 分間隔の systemd timer 用）。
+ * 失敗とみなすのは取得が落ちたときだけ。registration-data.json などの欠けは build の警告で表し、ここでは止めない。
  */
 
 const statePath = path.join(repoRoot, 'state', 'watch-state.json');
@@ -77,20 +72,6 @@ function sameContent(file: string, a: Buffer | null, b: Buffer | null): boolean 
   return normalizedHash(path.basename(file), a) === normalizedHash(path.basename(file), b);
 }
 
-function runContext(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tsx = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
-    const child = spawn(tsx, [path.join(repoRoot, 'scripts', 'toyo-context.ts'), '--no-sync'], {
-      cwd: repoRoot,
-      stdio: ['ignore', 'ignore', 'inherit'],
-    });
-    child.on('error', reject);
-    child.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`toyo:context --no-sync exited with ${code}`))
-    );
-  });
-}
-
 type Outcome = { changed: boolean; committed: boolean };
 
 async function runOnce(state: WatchState): Promise<Outcome> {
@@ -116,24 +97,7 @@ async function runOnce(state: WatchState): Promise<Outcome> {
   if (changed) state.pendingPublish = true;
   if (!state.pendingPublish) return { changed: false, committed: false };
 
-  const enrollmentBuf = await readBuf(jsonOutputPath);
-  if (!enrollmentBuf) throw new Error('registration-data.json がありません。先に toyo:sync を実行してください。');
-  const enrollment = JSON.parse(enrollmentBuf.toString('utf8')) as EnrollmentData;
-
-  const contentsBuf = await readBuf(toyoNetAceContentsOutputPath);
-  const contents: CourseContentCollectionResult = contentsBuf
-    ? (JSON.parse(contentsBuf.toString('utf8')) as CourseContentCollectionResult)
-    : {
-        fetchedAt: new Date().toISOString(),
-        source: 'toyonet-ace',
-        available: false,
-        contents: [],
-        errors: ['toyonet-ace-contents.json が存在しません（toyo:daily で取得されます）'],
-      };
-
-  const summary = await buildDiscordSummary(enrollment, { assignments, contents, announcements });
-  await writeDiscordSummary(summary);
-  await runContext();
+  await runBuild();
   const result = await publish({ dryRun: false, includeCandidates: false, force: false });
 
   state.pendingPublish = false;

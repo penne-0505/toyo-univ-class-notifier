@@ -7,7 +7,7 @@
 ## 基本方針
 
 - 最新情報を聞かれたら、まず `npm run toyo:sync` で同期を試す。
-- 同期後は `output/bot/summary.json` を確認する。
+- 同期後は `output/toyo/summary.json` を確認する（`toyo:sync` が最後に `toyo:build` を実行する）。
 - 授業の根拠は `output/toyo/registration-data.json` と `output/toyo/registration-summary.md` を優先する。
 - `fetchStatus` で取得結果を判定する：`success` → 通常 / `error` → ログイン喪失扱い / `empty` → 取得は成功したが履修ゼロ。
 - `システムエラー` と `タイムアウト` は、原則としてログイン状態の喪失として扱う。
@@ -35,7 +35,8 @@ Skillsは `.claude/commands/toyo.md` として定義。LLMが質問を受けた�
 | 学年暦（履修登録・抽選・追加登録・取消申請の期間、授業開始日） | `data/academic-schedule.json` | 手書きの静的データ（しおり由来。年度が変わったら書き直す。履修登録関連の期間のみ。学年暦の詳細はユーザーの Google カレンダーが正） |
 | 成績配分・足切り | `data/grading-rules.json` | `toyo:grading-rules` で下書き → 人が確認（`reviewed`）。`data/` は手書き・レビュー済みの静的データ（git 管理）、`output/` は生成物 |
 | シラバス | `output/toyo/syllabus/<授業コード>.json` | 学期内キャッシュ |
-| 集約サマリー | `output/bot/summary.json` | `toyo:sync` で生成 |
+| 科目の対応表 | `output/toyo/course-index.json` | `toyo:build` で生成 |
+| 集約サマリー | `output/toyo/summary.json` | `toyo:build` で生成（取得層の出力ファイルだけから作る純粋処理） |
 
 ## 主要コマンド
 
@@ -48,7 +49,8 @@ npm run toyo:export-enrollment
 npm run toyo:syllabus -- --course-code <授業コード>
 npm run toyo:calendar      # 祝日・学年暦のみ更新
 npm run toyo:announcements # ACEお知らせのみ更新
-npm run toyo:context       # エージェント用の圧縮コンテキストを生成（標準出力は 1 行サマリ、全文は --print）
+npm run toyo:build         # index → summary → context を作る（取得はしない。取得のあとに実行）
+npm run toyo:context       # エージェント用の圧縮コンテキストだけを作る（標準出力は 1 行サマリ、全文は --print）
 npm run toyo:health -- status   # 定期ジョブの失敗状況（アラート中なら終了コード 1）
 npm run toyo:candidates    # 履修登録画面から登録可能科目を取得（--syllabus でシラバスも）
 npm run toyo:credits       # 単位数集計表・履修修得科目を取得
@@ -67,10 +69,11 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 - `toyo:export-enrollment`: 履修登録確認表だけを更新する。
 - `toyo:syllabus`: 履修登録確認表の科目を指定して、シラバスを単体取得する（学期内キャッシュあり）。
 - `toyo:syllabus:seed`: `syllabus-pool/` と最新の `registration-candidates.json`（`--from` 指定時はそのファイルだけ）の `syllabus` 本文から、登録中科目のシラバスキャッシュを一括生成する（時間割検索を経由しない。既存ファイルは `--force` で上書き、`--course-code` で対象を絞る）。daily が index の欠けを埋めるときにも使う。
-- `toyo:build:index`: `output/toyo/course-index.json` を作る（ファイルだけを読む純粋処理。ブラウザ・ネットワーク不使用なので排他不要）。登録科目を追加した直後や ACE への反映確認に手で実行してよい。`toyo:coursework`（毎時）と `toyo:daily` が自動で呼ぶ。`warnings` は今学期の科目だけで、「シラバスのキャッシュが無い」「ACE のコース一覧にまだ無い（登録の反映待ちの可能性）」「評価ルールが無い」の 3 種。agent-context の Warnings にも `<科目名>: <警告>` として載る。
+- `toyo:build`: 組み立て層（`scripts/build/`）を index → summary → context の順に実行する。ファイルだけを読む純粋処理でブラウザ・ネットワークは使わないので排他不要。どのジョブも取得のあとに呼ぶ。欠けている入力（`null`）は取りに行かず、index の `warnings` と summary の `sourceStatus` / `errors`、agent-context の Warnings で表す（ジョブは失敗にしない）。
+- `toyo:build:index`: `output/toyo/course-index.json` だけを作る。登録科目を追加した直後や ACE への反映確認に手で実行してよい。`warnings` は今学期の科目だけで、「シラバスのキャッシュが無い」「ACE のコース一覧にまだ無い（登録の反映待ちの可能性）」「評価ルールが無い」の 3 種。agent-context の Warnings にも `<科目名>: <警告>` として載る。
 - `toyo:calendar`: 内閣府CSVから祝日データを取得する。
 - `toyo:announcements`: ToyoNet-ACEのお知らせ（休講・補講・教室変更等）を取得する。
-- `toyo:context`: `summary.json` が古い場合は `toyo:sync` を試み、今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。既存出力だけで作る場合は `--no-sync` を付ける。標準出力は 1 行サマリ（`[context] <JST> today=n tomorrow=m warnings=k`）で、全文は `--print`（`--format json` と併用可）。定期ジョブが失敗中・停止中なら Warnings に載る（「失敗の検知と通知」参照）。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
+- `toyo:context`: 今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。取得も sync もしない（`summary.json` が古ければ `freshness.stale` と Warnings で表すだけ。`--no-sync` は互換のため受け付けて無視）。標準出力は 1 行サマリ（`[context] <JST> today=n tomorrow=m warnings=k`）で、全文は `--print`（`--format json` と併用可）。定期ジョブが失敗中・停止中なら Warnings に載る（「失敗の検知と通知」参照）。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
 - `toyo:schedule`: `academic-schedule.json` を読むだけ。`--date 2026-10-07` で任意の日の進行中の期間と各曜日の第N回を確認できる。祝日（`academic-calendar.json`）と `noClassDays` は授業日から除き、`makeupDays` は振替曜日として数える。
 - `toyo:grading-rules`: シラバス本文から正規表現で配分・足切りを抽出する下書き生成。抽出結果は必ず `sourceText` と見比べて直し `reviewed: true` にする。配分合計が 100 にならない科目は `warnings` に入る。
 
@@ -108,25 +111,25 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 ### シラバスの自動補完（daily）
 
-`toyo:daily` は全取得のあと `toyo:build:index` を実行し、index の `warnings` に「シラバスのキャッシュが無い」が出ている科目（今学期のみ）について、`toyo:syllabus:seed`（pool から。ブラウザ不要）→ まだ欠けていれば `toyo:syllabus -- --course-code <授業コード>`（時間割検索。ブラウザ）の順に補完し、`toyo:build:index` を作り直す。登録科目を追加した翌朝に自動で埋まる。補完に失敗した段は daily の失敗（`FAILED`）として記録され、通知対象になる（欠けたままでも後続の context・publish は続行する）。watch / coursework はブラウザで補完しない（coursework は index を作り直すだけ）。
+`toyo:daily` は全取得のあと `toyo:build:index` を実行し、index の `warnings` に「シラバスのキャッシュが無い」が出ている科目（今学期のみ）について、`toyo:syllabus:seed`（pool から。ブラウザ不要）→ まだ欠けていれば `toyo:syllabus -- --course-code <授業コード>`（時間割検索。ブラウザ）の順に補完し、`toyo:build:index` を作り直す。登録科目を追加した翌朝に自動で埋まる。補完の段（index 再作成・seed・時間割検索）は「データの欠けを埋める試み」なので、失敗しても `[daily] WARN ...` として journal に記録するだけで daily は成功扱い（終了コード 0。`toyo:health` の通知対象にならない）。埋まらなかった欠けは index と agent-context の Warnings に残る。取得段（coursework / sync / credits / lottery）と `toyo:build` / `toyo:publish` の失敗は従来どおり daily の失敗。watch / coursework はブラウザで補完しない（coursework は index を作り直すだけ）。
 
 ## データ配信（toyo-data）
 
 取得データは private repo `penne-0505/toyo-data`（ローカル clone: `~/toyo-data`）へ定期 push する。systemd ユーザータイマーで動き。
 
 ```
-toyo-watch.timer (5分)  → toyo:watch ─ 変化あり → summary 再生成 → toyo:context --no-sync ─┐
-toyo-coursework.timer (毎時:20) → toyo:coursework (+ build:index) → context --no-sync ────┤
-toyo-daily.timer (04:30) → toyo:daily (coursework/sync/credits/lottery/build:index/syllabus 補完/context) ┤
+toyo-watch.timer (5分)  → toyo:watch ─ 変化あり → toyo:build ─────────────────────────────┐
+toyo-coursework.timer (毎時:20) → toyo:coursework → toyo:build（unit は続けて context も作る）┤
+toyo-daily.timer (04:30) → toyo:daily (coursework/sync/credits/lottery → index → syllabus 補完 → build) ┤
                                                                                           ▼
                                        toyo:publish → ~/toyo-data → GitHub (private)
 ```
 
-- 公開対象は allowlist（`output/toyo/**`、`output/bot/summary.json`、`data/**`）のみ。`artifacts/`・`playwright/`・`.env*` はコード上含まれない。`registration-candidates.json`（約 1.6MB）は `--include-candidates`（daily）のときだけ。allowlist の中でも `output/toyo/syllabus-pool/`（約 146 科目分）と `registration-candidates.<regular|add>.json` は配信しない（`scripts/toyo-publish.ts` の `NOT_PUBLISHED_PATTERNS`）。`course-index.json` は配信される。
+- 公開対象は allowlist（`output/toyo/**`、`data/**`）のみ（summary.json も `output/toyo/` にある。旧 `output/bot/summary.json` は配信対象外で、toyo-data / Worker に残っていれば publish が削除として反映する）。`artifacts/`・`playwright/`・`.env*` はコード上含まれない。`registration-candidates.json`（約 1.6MB）は `--include-candidates`（daily）のときだけ。allowlist の中でも `output/toyo/syllabus-pool/`（約 146 科目分）と `registration-candidates.<regular|add>.json` は配信しない（`scripts/toyo-publish.ts` の `NOT_PUBLISHED_PATTERNS`）。`course-index.json` は配信される。
 - 差分判定は `fetchedAt` / `generatedAt` / `builtAt` などの時刻を除いたハッシュ。時刻だけ変わったファイルは書き換えず、commit にも含めない。`meta.json` だけが変わる場合も commit しない（daily は `--force` で毎日 1 commit 作り、生存確認を兼ねる）。
 - watch は `state/watch-state.json` に連続失敗数と次回許可時刻を持つ。失敗 2 回で 15 分、4 回で 30 分スキップし、成功で解除。ログイン切れ時は `toyo:login` 後に `rm state/watch-state.json`。
-- watch・daily・coursework は `flock /tmp/toyo-fetch.lock` で排他（Playwright セッションは同時に 1 つ）。coursework は取得後に summary.json も再生成し（`--no-summary` で省略）、各授業・課題に `coursework`（提出済/未提出数・次の受付開始）、トップレベルに `courseworkSchedule`（今後 14 日、受付開始待ちを含む）を載せる。導入・確認・停止は `deploy/README.md`。
-- 注意: watch が「変化なし」の間は summary.json の `generatedAt` が古いままになる。`toyo:context` の既定 30 分 stale 判定を使う場合は `--no-sync` を付けても警告が出うる。鮮度は `fetchedAt` の新しさではなく、watch の最終確認時刻（`state/watch-state.json` の `lastSuccessAt`）で見ること。
+- watch・daily・coursework は `flock /tmp/toyo-fetch.lock` で排他（Playwright セッションは同時に 1 つ）。coursework は取得後に `toyo:build` で summary.json も再生成し（`--no-build` で省略。daily は最後にまとめて build するため付ける）、各授業・課題に `coursework`（提出済/未提出数・次の受付開始）、トップレベルに `courseworkSchedule`（今後 14 日、受付開始待ちを含む）を載せる。導入・確認・停止は `deploy/README.md`。
+- 注意: watch が「変化なし」の間は summary.json の `generatedAt` が古いままになる。`toyo:context` の既定 30 分 stale 判定には警告が出うる。鮮度は `fetchedAt` の新しさではなく、watch の最終確認時刻（`state/watch-state.json` の `lastSuccessAt`）で見ること。
 - 注意: `registration-data.json` には学籍番号・氏名が含まれ、そのまま push される（private repo 前提）。
 - journal を汚さないため、定期実行されるコマンドの標準出力は 1 行サマリにしている（`toyo:context` は `[context] ...`、`toyo:coursework` は `[coursework] ...`、`toyo:sync` は `[sync] ...`）。科目ごとの内訳は `toyo:coursework -- --verbose`、context の全文は `--print`。
 - 失敗検知と通知は次節「失敗の検知と通知」。
@@ -188,8 +191,8 @@ npm run toyo:health -- status        # アラート中のジョブがあれば�
 
 ## 同期後に確認するファイル
 
-- `output/bot/summary.json`
-  全ソースを集約した summary（歴史的経緯で `bot/` 配下にある）。LLM エージェントが読む。`sourceStatus` でポータル・ACEの取得状況を確認。
+- `output/toyo/summary.json`
+  全ソースを集約した summary。LLM エージェントが読む。全体の一覧（課題・コンテンツ・お知らせ）の各項目には index で引いた授業コード `courseCode` が付く（`null` = 科目不明）。`sourceStatus` でポータル・ACEの取得状況を確認。
 - `output/toyo/agent-context.json` / `output/toyo/agent-context.md`
   コーディングエージェントが最初に読む圧縮コンテキスト。`freshness`、`warnings`、今日/明日の授業、近い課題、重要なお知らせ、参照すべき source file を含む。
 - `output/toyo/registration-data.json`
@@ -277,7 +280,7 @@ npm run toyo:login
 1. `npm run toyo:context` を実行する。
 2. `output/toyo/agent-context.md` または `output/toyo/agent-context.json` を読む。
 3. `freshness.stale`、`warnings`、`sourceStatus` を確認する。
-4. 詳細が必要なら `output/bot/summary.json` と source file に戻る。
+4. 詳細が必要なら `output/toyo/summary.json` と source file に戻る。
 5. `registration-data.json` の `fetchStatus` を確認する。
    - `"error"` → ログイン喪失扱い。授業データを信用しないと断った上で回答する。
    - `"empty"` → 「履修データが空です。`npm run toyo:login` 後に再同期してください」と伝える。
@@ -402,7 +405,7 @@ await recoverToyoSessionIfNeeded(page, {
 skill には、次の粒度で手順を持たせる。
 
 - 「最新化する」なら `npm run toyo:sync`
-- 「取得結果を読む」なら `output/bot/summary.json`
+- 「取得結果を読む」なら `output/toyo/summary.json`
 - 「失敗を診断する」なら `sourceStatus`、`errors`、`artifacts/toyo/`
 - 「ログイン喪失」なら `recoverToyoSessionIfNeeded` または `npm run toyo:login`
 

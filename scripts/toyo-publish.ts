@@ -18,12 +18,18 @@ const HEALTH_REL = 'output/toyo/health.json';
 
 /**
  * 公開してよいパスは allowlist だけ。除外リストには頼らない。
- *   output/toyo/**, output/bot/summary.json, data/**
+ *   output/toyo/**, data/**（summary.json も output/toyo/ にある）
  * allowlist の内側でも、配信しないと決めたものは NOT_PUBLISHED_PATTERNS で明示的に弾く。
  *   - syllabus-pool/: 約 140 科目分のシラバス本文。受け手には不要（登録中の科目は syllabus/ に出る）
  *   - registration-candidates.<regular|add>.json: 期間別の候補ファイル（最新版は registration-candidates.json）
  */
-const ALLOWED_PATTERNS: RegExp[] = [/^output\/toyo\/.+/, /^output\/bot\/summary\.json$/, /^data\/.+/];
+const ALLOWED_PATTERNS: RegExp[] = [/^output\/toyo\/.+/, /^data\/.+/];
+/**
+ * 旧パス。配信はしない。toyo-data / Worker に残っていれば削除として反映するためだけに管理対象へ含める。
+ *   - output/bot/summary.json: summary.json は output/toyo/ へ移した（2026-10）。2026-10 以降、旧ファイルが消えたら削除してよい。
+ */
+const LEGACY_PATTERNS: RegExp[] = [/^output\/bot\/summary\.json$/];
+const LEGACY_PATHS = ['output/bot/summary.json'];
 const NOT_PUBLISHED_PATTERNS: RegExp[] = [
   /^output\/toyo\/syllabus-pool\//,
   /^output\/toyo\/registration-candidates\.(?:regular|add)\.json$/,
@@ -37,7 +43,7 @@ function isNotPublished(rel: string): boolean {
 /** toyo-data / Worker の管理対象のパスか（削除の反映でも使う）。 */
 function assertManaged(rel: string): void {
   const ok =
-    ALLOWED_PATTERNS.some((p) => p.test(rel)) &&
+    (ALLOWED_PATTERNS.some((p) => p.test(rel)) || LEGACY_PATTERNS.some((p) => p.test(rel))) &&
     !rel.split('/').some((segment) => FORBIDDEN_SEGMENTS.test(segment));
   if (!ok) {
     throw new Error(`Refusing to publish path outside allowlist: ${rel}`);
@@ -47,13 +53,13 @@ function assertManaged(rel: string): void {
 /** 配信（コピー・PUT）してよいパスか。管理対象のうち NOT_PUBLISHED でないもの。 */
 function assertAllowed(rel: string): void {
   assertManaged(rel);
-  if (isNotPublished(rel)) {
+  if (!ALLOWED_PATTERNS.some((p) => p.test(rel)) || isNotPublished(rel)) {
     throw new Error(`Refusing to publish path excluded from publishing: ${rel}`);
   }
 }
 
 const SOURCE_COMMANDS: Array<[RegExp, string]> = [
-  [/^output\/bot\/summary\.json$/, 'toyo:sync | toyo:watch'],
+  [/^output\/toyo\/summary\.json$/, 'toyo:build'],
   [/^output\/toyo\/registration-(?:data\.json|summary\.md)$/, 'toyo:sync'],
   [/^output\/toyo\/toyonet-ace-assignments\.json$/, 'toyo:sync | toyo:watch'],
   [/^output\/toyo\/announcements\.json$/, 'toyo:sync | toyo:watch'],
@@ -63,8 +69,8 @@ const SOURCE_COMMANDS: Array<[RegExp, string]> = [
   [/^output\/toyo\/credit-summary\./, 'toyo:credits'],
   [/^output\/toyo\/lottery-results\./, 'toyo:lottery'],
   [/^output\/toyo\/registration-candidates\.json$/, 'toyo:candidates'],
-  [/^output\/toyo\/course-index\.json$/, 'toyo:build:index'],
-  [/^output\/toyo\/agent-context\./, 'toyo:context'],
+  [/^output\/toyo\/course-index\.json$/, 'toyo:build'],
+  [/^output\/toyo\/agent-context\./, 'toyo:build'],
   [/^output\/toyo\/health\.json$/, 'toyo:health'],
   [/^output\/toyo\/syllabus\//, 'toyo:syllabus'],
   [/^data\//, 'manual (data/)'],
@@ -197,13 +203,6 @@ async function collectSources(includeCandidates: boolean): Promise<Map<string, s
   const sources = new Map<string, string>();
   await walk(path.join(repoRoot, 'output', 'toyo'), 'output/toyo', sources);
   await walk(path.join(repoRoot, 'data'), 'data', sources);
-  const summary = path.join(repoRoot, 'output', 'bot', 'summary.json');
-  try {
-    await fs.access(summary);
-    sources.set('output/bot/summary.json', summary);
-  } catch {
-    /* summary 未生成 */
-  }
   if (!includeCandidates) sources.delete(CANDIDATES_REL);
   // 配信しないと決めたもの（syllabus-pool、期間別の候補ファイル）はここで明示的に外す
   for (const rel of [...sources.keys()]) if (isNotPublished(rel)) sources.delete(rel);
@@ -292,8 +291,11 @@ export async function publish(options: Options): Promise<PublishResult> {
   const managed = new Map<string, string>();
   await walk(path.join(dataRepoDir, 'output', 'toyo'), 'output/toyo', managed);
   await walk(path.join(dataRepoDir, 'data'), 'data', managed);
-  const botSummary = path.join(dataRepoDir, 'output', 'bot', 'summary.json');
-  if (await readIfExists(botSummary)) managed.set('output/bot/summary.json', botSummary);
+  // 旧パス（配信対象ではない）が toyo-data に残っていれば、削除として反映する
+  for (const legacy of LEGACY_PATHS) {
+    const abs = path.join(dataRepoDir, legacy);
+    if (await readIfExists(abs)) managed.set(legacy, abs);
+  }
   for (const [rel, abs] of managed) {
     if (sources.has(rel)) continue;
     if (rel === CANDIDATES_REL && !options.includeCandidates) continue;
@@ -317,7 +319,7 @@ export async function publish(options: Options): Promise<PublishResult> {
     };
   }
   let sourceStatus: unknown = null;
-  const summaryBuf = await readIfExists(path.join(repoRoot, 'output', 'bot', 'summary.json'));
+  const summaryBuf = await readIfExists(path.join(repoRoot, 'output', 'toyo', 'summary.json'));
   if (summaryBuf) {
     try {
       sourceStatus = (JSON.parse(summaryBuf.toString('utf8')) as { sourceStatus?: unknown }).sourceStatus ?? null;

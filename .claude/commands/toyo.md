@@ -12,7 +12,7 @@
 ### それ以外の情報（毎回フェッチ）
 質問に答える前に必ず `npm run toyo:context` を実行すること。
 その後 `output/toyo/agent-context.md` または `output/toyo/agent-context.json` を読む。
-詳細確認が必要な場合は集約 summary（`output/bot/summary.json`）と各 source file に戻る。
+詳細確認が必要な場合は集約 summary（`output/toyo/summary.json`）と各 source file に戻る。
 
 ## 情報ソースのルーティング
 
@@ -23,9 +23,9 @@
 | 今日は第何回の授業か | `agent-context` の各授業の `sessionNumber`、または `npm run toyo:schedule`（祝日は授業なしとして数える。null は計算不能） |
 | この課題・回を飛ばせるか／成績配分・足切り | `agent-context` の各授業の `gradingRules`（元データ `data/grading-rules.json`）。`reviewed:false` や `warnings` があれば `sourceText`（シラバス原文）を引用して不確実性を伝える |
 | 授業・曜日・教室・担当者 | `output/toyo/registration-data.json` |
-| 今日・明日の授業一覧 | `output/bot/summary.json` の `todayClasses` / `tomorrowClasses` |
-| 休講・補講・教室変更 | `output/bot/summary.json` の `announcements`（category フィールドで分類） |
-| 課題・締切 | `output/bot/summary.json` の `upcomingAssignments` |
+| 今日・明日の授業一覧 | `output/toyo/summary.json` の `todayClasses` / `tomorrowClasses` |
+| 休講・補講・教室変更 | `output/toyo/summary.json` の `announcements`（category フィールドで分類） |
+| 課題・締切 | `output/toyo/summary.json` の `upcomingAssignments` |
 | シラバス詳細（講義スケジュール・評価等） | `output/toyo/syllabus/<授業コード>.json` |
 | 授業時間・入構ルール | `docs/basic-info.md` |
 | エージェント用初期コンテキスト | `output/toyo/agent-context.md` / `output/toyo/agent-context.json` |

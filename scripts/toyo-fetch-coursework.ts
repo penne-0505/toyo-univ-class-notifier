@@ -1,52 +1,17 @@
 #!/usr/bin/env node
 
-import fs from 'node:fs/promises';
-import { jsonOutputPath, type EnrollmentData } from './lib/toyo-enrollment';
 import { collectToyoNetAceCoursework, courseworkOutputPath, computeCounts } from './lib/toyonet-ace-coursework';
-import {
-  toyoNetAceAssignmentsOutputPath,
-  toyoNetAceContentsOutputPath,
-  type AssignmentCollectionResult,
-  type CourseContentCollectionResult,
-} from './lib/toyonet-ace';
-import { announcementsOutputPath, type AnnouncementCollectionResult } from './lib/toyo-announcements';
-import { buildDiscordSummary, writeDiscordSummary } from './lib/toyo-summary';
-import { buildAndWriteCourseIndex, summarizeCourseIndex } from './toyo-build-index';
+import { runBuild } from './toyo-build';
 
 /**
  * ACE のコース別提出状況（レポート / 小テスト / アンケート / 成績 / 提出記録）を取得して
  * output/toyo/toyonet-ace-coursework.json に保存する。
- * 取得後、ディスク上の ACE データから summary.json を再生成する（--no-summary で省略）。
- * 再生成しないと toyo:context が coursework を反映できない。
- * 最後に course-index.json も作り直す（純粋処理）。ACE への登録反映の有無が毎時 index に載る。
+ * 取得後、toyo:build（index → summary → agent-context）を実行する（--no-build で省略。daily は最後にまとめて実行するため付ける）。
+ * 失敗とみなすのは取得が落ちたときだけ。ACE への登録反映待ちなどの欠けは index の警告で表し、ここでは失敗にしない。
  */
 
-async function readJson<T>(file: string): Promise<T | null> {
-  try {
-    return JSON.parse(await fs.readFile(file, 'utf8')) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function rebuildSummary(): Promise<void> {
-  const [enrollment, assignments, contents, announcements] = await Promise.all([
-    readJson<EnrollmentData>(jsonOutputPath),
-    readJson<AssignmentCollectionResult>(toyoNetAceAssignmentsOutputPath),
-    readJson<CourseContentCollectionResult>(toyoNetAceContentsOutputPath),
-    readJson<AnnouncementCollectionResult>(announcementsOutputPath),
-  ]);
-  if (!enrollment || !assignments || !contents || !announcements) {
-    console.warn('summary を再生成できません（registration-data / assignments / contents / announcements のいずれかが無い）。');
-    return;
-  }
-  const summary = await buildDiscordSummary(enrollment, { assignments, contents, announcements });
-  await writeDiscordSummary(summary);
-  console.log('[coursework] summary.json を再生成しました。');
-}
-
 export async function main(): Promise<void> {
-  const noSummary = process.argv.includes('--no-summary');
+  const noBuild = process.argv.includes('--no-build');
   // 科目ごとの内訳は --verbose のときだけ（毎時の journal を汚さない）
   const verbose = process.argv.includes('--verbose');
   if (verbose) console.log('Collecting ToyoNet-ACE coursework...');
@@ -80,14 +45,8 @@ export async function main(): Promise<void> {
   if (!result.available) {
     process.exit(1);
   }
-  if (!noSummary) {
-    await rebuildSummary();
-  }
-  try {
-    console.log(summarizeCourseIndex(await buildAndWriteCourseIndex()));
-  } catch (error) {
-    // index は派生物。作れなくても取得結果の publish は止めない（次の周で作り直される）
-    console.error(`[coursework] course-index.json を作れませんでした: ${error instanceof Error ? error.message : String(error)}`);
+  if (!noBuild) {
+    await runBuild();
   }
 }
 

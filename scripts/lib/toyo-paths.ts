@@ -7,3 +7,4 @@ import path from 'node:path';
 export const repoRoot = path.resolve(__dirname, '..', '..');
 export const outputDir = path.join(repoRoot, 'output', 'toyo');
 export const dataDir = path.join(repoRoot, 'data');
+export const registrationDataPath = path.join(outputDir, 'registration-data.json');

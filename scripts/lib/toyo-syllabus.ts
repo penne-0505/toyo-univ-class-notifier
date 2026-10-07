@@ -1,15 +1,12 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { type Page } from 'playwright';
-import { type Course, outputDir } from './toyo-enrollment';
+import { type Course } from './toyo-enrollment';
+import { type SyllabusRecord } from './syllabus-cache';
 import {
   getOrCreatePage,
   launchStateContext,
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
 } from './toyo';
-
-const syllabusOutputDir = path.join(outputDir, 'syllabus');
 
 type TimetableCandidate = {
   rowIndex: number;
@@ -28,24 +25,7 @@ type SyllabusPageSnapshot = {
   sections: Record<string, string>;
 };
 
-export type SyllabusRecord = {
-  fetchedAt: string;
-  academicYear: string;
-  sourceUrl: string;
-  courseName: string;
-  instructor: string;
-  courseCode: string;
-  classFormat: string;
-  conductionType: string;
-  timetable: string;
-  classroom: string;
-  learningGoals: string;
-  lectureSchedule: string;
-  instructionMethod: string;
-  preAndPostStudy: string;
-  grading: string;
-  textbook: string;
-};
+export type { SyllabusRecord } from './syllabus-cache';
 
 export type SyllabusLookupInput = Pick<
   Course,
@@ -111,7 +91,12 @@ function toHalfWidthAlnum(value: string): string {
     });
 }
 
-function normalizeCourseName(value: string): string {
+/**
+ * 時間割検索（Usin026411）の候補と登録科目を照合するための正規化。この照合専用で、科目の突き合わせキーではない。
+ * 全角の数字と英大文字だけを半角にし、空白を除いて大文字化する。NFKC ではないので、全角英小文字・半角カナ・
+ * 全角記号は変換されない。科目名のキーは lib/course-key.ts の courseKey を使うこと。
+ */
+function normalizeForTimetableMatch(value: string): string {
   return toHalfWidthAlnum(normalizeText(value)).replace(/[　\s]+/g, '').toUpperCase();
 }
 
@@ -124,7 +109,7 @@ function normalizeSemesterLabel(value: string): string {
 }
 
 function normalizeSchedule(value: string): string {
-  return normalizeCourseName(value);
+  return normalizeForTimetableMatch(value);
 }
 
 function desiredSchedule(course: SyllabusLookupInput): string {
@@ -160,7 +145,7 @@ function metadataValue(metadata: Record<string, string>, label: string): string 
 
 function scoreCandidate(candidate: TimetableCandidate, course: SyllabusLookupInput): number {
   let score = 0;
-  if (normalizeCourseName(candidate.courseName) === normalizeCourseName(course.courseName)) {
+  if (normalizeForTimetableMatch(candidate.courseName) === normalizeForTimetableMatch(course.courseName)) {
     score += 12;
   }
   if (normalizeText(candidate.numbering) === normalizeText(course.numbering)) {
@@ -425,31 +410,4 @@ export async function fetchSyllabus(course: SyllabusLookupInput): Promise<Syllab
     await context.close();
     await browser.close();
   }
-}
-
-type SyllabusFileCache = {
-  fetchedAt: string;
-  inputCourse: unknown;
-  syllabus: SyllabusRecord;
-};
-
-/** キャッシュ（output/toyo/syllabus/<授業コード>.json）だけを読む。ブラウザは使わない。無ければ null */
-export async function readCachedSyllabus(course: SyllabusLookupInput): Promise<SyllabusRecord | null> {
-  if (!course.courseCode || !course.academicYear) return null;
-  const stem = course.courseCode.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80);
-  const cachePath = path.join(syllabusOutputDir, `${stem}.json`);
-  try {
-    const raw = await fs.readFile(cachePath, 'utf8');
-    const cached = JSON.parse(raw) as SyllabusFileCache;
-    if (cached.syllabus?.academicYear === course.academicYear) {
-      return cached.syllabus;
-    }
-  } catch {
-    // cache miss
-  }
-  return null;
-}
-
-export async function fetchSyllabusWithCache(course: SyllabusLookupInput): Promise<SyllabusRecord> {
-  return (await readCachedSyllabus(course)) ?? fetchSyllabus(course);
 }

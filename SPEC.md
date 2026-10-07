@@ -20,15 +20,18 @@
 ```
 toyo:login ──→ storageState（playwright/.auth/toyo-state.json）を保存
                     │
+【取得層】ブラウザ・HTTP で 1 ソースずつ取り、output/toyo/<source>.json に落とす
 toyo:sync ────┬──→ 履修登録確認表 ──→ registration-data.json / .md
               ├──→ ACE 課題 ───────→ toyonet-ace-assignments.json
               ├──→ ACE コンテンツ ─→ toyonet-ace-contents.json
               ├──→ ACE お知らせ ───→ announcements.json
-              ├──→ 祝日 CSV ───────→ academic-calendar.json
-              ├──→ シラバス ───────→ syllabus/<授業コード>.json / .md
-              └──→ 集約 ───────────→ output/bot/summary.json
-                    │
-toyo:context ──→ summary.json 等を圧縮 ──→ agent-context.json / .md
+              └──→ 祝日 CSV ───────→ academic-calendar.json
+toyo:syllabus / toyo:daily（index の欠けの補完）──→ syllabus/<授業コード>.json / .md
+
+【組み立て層】ファイルだけを読む純粋処理（scripts/build/。Playwright もネットワークも使わない）
+toyo:build ───┬──→ index ──→ course-index.json（科目の対応表。欠けは warnings）
+              ├──→ summary ─→ output/toyo/summary.json
+              └──→ context ─→ agent-context.json / .md
 ```
 
 ## 2. 前提環境・依存
@@ -86,7 +89,8 @@ toyo:context ──→ summary.json 等を圧縮 ──→ agent-context.json / 
 | `output/toyo/toyonet-ace-contents.json` | ACE コンテンツ取得 | コース掲示資料 |
 | `output/toyo/announcements.json` | ACE お知らせ取得 | コースニュース（カテゴリ分類済み） |
 | `output/toyo/academic-calendar.json` | 祝日取得 | 内閣府祝日データ |
-| `output/bot/summary.json` | 集約ビルダ | 全ソース集約 JSON（歴史的経緯で `bot/` 配下） |
+| `output/toyo/course-index.json` | 組み立て層（index） | 科目の対応表（授業コード・ACE courseId・scheduleCd・`has.*`・`warnings`） |
+| `output/toyo/summary.json` | 組み立て層（summary） | 全ソース集約 JSON |
 | `output/toyo/agent-context.json` / `.md` | コンテキスト生成 | エージェント向け圧縮コンテキスト |
 
 ## 4. 環境変数
@@ -124,8 +128,10 @@ toyo:context ──→ summary.json 等を圧縮 ──→ agent-context.json / 
 | `toyo:syllabus` | `scripts/toyo-fetch-syllabus.ts` | 指定科目のシラバス取得 |
 | `toyo:calendar` | `scripts/toyo-fetch-calendar.ts` | 祝日データ取得 |
 | `toyo:announcements` | `scripts/toyo-fetch-announcements.ts` | ACE コースニュース取得 |
-| `toyo:sync` | `scripts/toyo-sync.ts` | 全データ同期 + `summary.json` 更新 |
-| `toyo:context` | `scripts/toyo-context.ts` | エージェント向け圧縮コンテキスト生成 |
+| `toyo:sync` | `scripts/toyo-sync.ts` | 履修・課題・コンテンツ・お知らせ・祝日を取得 → `toyo:build`（`--no-build` で省略） |
+| `toyo:build` | `scripts/toyo-build.ts` | 組み立て層をまとめて実行: index → summary → context（取得はしない） |
+| `toyo:build:index` | `scripts/toyo-build-index.ts` | `course-index.json` だけを作る |
+| `toyo:context` | `scripts/toyo-context.ts` | エージェント向け圧縮コンテキスト生成（読み込み・書き出しだけの薄い CLI。組み立ては `scripts/build/context.ts`） |
 | `toyo:candidates` | `scripts/toyo-fetch-registration-candidates.ts` | 履修登録画面の全コマから登録可能科目（＋シラバス）を取得 |
 | `toyo:credits` | `scripts/toyo-fetch-credits.ts` | 単位数集計表・履修修得科目一覧を取得 |
 | `toyo:lottery` | `scripts/toyo-fetch-lottery.ts` | 抽選実施科目一覧と当落（○/×）を取得 |
@@ -426,13 +432,13 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 1. 候補抽出 → スコアリング → 上位 8 件まで詳細を順に開き、`courseCode` が `course.courseCode` と一致した時点でその `SyllabusRecord` を返す
 2. 候補 0 件・マッチ 0 件・詳細読み取り失敗はそれぞれ明示的メッセージで例外
 
-#### `fetchSyllabusWithCache(course)` — 学期内キャッシュ
+#### シラバスのキャッシュ（`lib/syllabus-cache.ts`）
 
-`courseCode` と `academicYear` が両方ある場合、`output/toyo/syllabus/<sanitizedCourseCode>.json` を読み、キャッシュ内 `syllabus.academicYear === course.academicYear` ならキャッシュ値を返す。不一致・不在・パース失敗時は `fetchSyllabus` へフォールスルー。
+`output/toyo/syllabus/<syllabusFileStem(授業コード)>.json` を読む純粋なモジュール（playwright に依存しない）。`readSyllabusCache()` が全件を `授業コード → SyllabusRecord` のマップで返し、`findSyllabus(map, 授業コード, academicYear)` が引く（`academicYear` が違うキャッシュは無いものとして扱う）。取得（`fetchSyllabus`）とは分離しており、キャッシュが無いときに取りに行く処理（旧 `fetchSyllabusWithCache`）は無い。補完は daily が index の欠け（`has.syllabus === false`）を見て、pool（`toyo:syllabus:seed`）→ 時間割検索（`toyo:syllabus`）の順に行う。
 
-### 7.7 `lib/toyo-summary.ts` — 集約サマリー
+### 7.7 `build/summary.ts` — 集約サマリー（組み立て層）
 
-`output/bot/summary.json` を生成する。すべての日時処理は **JST（UTC+9）を UTC フィールド読み取りでエミュレート**する（`Date + 9h` → `getUTC*`）。
+`output/toyo/summary.json` の中身を作る純粋関数 `buildSummary(inputs, index, now)`。Playwright も fetch も import せず、取得層の出力ファイルの中身（`registration` / `assignments` / `contents` / `announcements` / `coursework` / `academicCalendar` / `syllabi` / `academicSchedule`）を引数で受け取る。欠けている入力は `null` で渡し、取りに行かず `sourceStatus` と `errors` で表す。読み込みと書き出しは `scripts/toyo-build.ts`。すべての日時処理は **JST（UTC+9）を UTC フィールド読み取りでエミュレート**する（`Date + 9h` → `getUTC*`）。
 
 #### 時限テーブル（固定）
 
@@ -451,29 +457,35 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 - `nextOccurrence(course, now)`: `course.day`（曜日ラベル）と `periodTimes` から次回開始を算出。同日なら開始時刻を過ぎていれば +7 日。`startsAt`/`endsAt` は `YYYY-MM-DDTHH:MM:00+09:00` と epoch ms を併記
 - `occurrenceOnOffsetDay(course, now, dayOffset)`: `now + dayOffset` 日（JST）の曜日が `course.day` と一致すれば同形式で返す。`dayOffset=0` が今日、`1` が明日
 
-#### 関連付け規則
+#### 関連付け規則（course-index 経由）
 
-- 課題: `assignment.courseName === classInfo.courseName`（厳密一致）
-- コンテンツ: `content.courseName === classInfo.courseName`
-- お知らせ: `courseNameHint === courseName` または `title.includes(courseName)` または（`courseName.length >= 4` の場合）`title.includes(courseName.slice(0, 4))`
+名前の `===` 比較や部分一致はしない（旧実装は全角半角の違いで取りこぼしていた）。ACE の課題・お知らせ・コンテンツは `build/course-lookup.ts` の resolver で授業コードに引く:
+
+1. ACE courseId（課題の `assignmentId`、コンテンツ・お知らせの URL に含まれる `course_<数字>`）が index の `aceCourseId` と一致すればそれ
+2. 科目名（課題・コンテンツの `courseName`、お知らせの `courseNameHint`）の `courseKey` が index の `names.key` / `names.ace` のキー、または coursework の ACE 名（見出し名・一覧名）のキーと一致すればそれ
+3. `courseNameHint` が無いお知らせだけ、タイトルに index の科目名のキーが丸ごと（3 文字以上）含まれるものを、最長一致で引く（先頭 4 文字などの部分一致はしない）
+
+同名の科目が複数あるときは今学期のものを優先する。引けなかったものは落とさず、全体の一覧（`upcomingAssignments` / `courseContents` / `announcements`）に `courseCode: null`（科目不明）で残す。引けたものには授業コードを `courseCode` として付ける。授業ごとの `coursework` は index の `aceCourseId`（無ければ授業コード一致）で引く。
 
 #### ソート規則
 
 - 課題: `dueAt` 昇順、`null` は末尾、両方 `null` ならタイトル `ja` 順
 - コンテンツ: `updatedAt ?? listedAt` 降順、両方欠落ならタイトル `ja` 順
 
-#### `buildDiscordSummary(enrollment)`
+#### `buildSummary(inputs, index, now)`
 
 1. 履修各科目の `nextOccurrence` を計算し最早のものを `nextClass` とする
-2. `collectToyoNetAceAssignments()` / `collectToyoNetAceContents(courseNames)` / `collectToyoNetAceAnnouncements(courseNames)` を `Promise.all` で並行実行
-3. `nextClassNotes`: `nextClass` の科目のシラバスを `fetchSyllabusWithCache` で取得し `{ checkedAt: <JST日付>, firstTopic, syllabusPoints }` を構成
+2. `nextClassNotes`: `nextClass` の科目のシラバス（`syllabi` から `findSyllabus`）で `{ checkedAt: <JST日付>, firstTopic, syllabusPoints }` を構成
    - `firstTopic`: 講義スケジュールから `第N項/第N回` パターンの最初のトピックを正規表現で抽出
    - `syllabusPoints`: `評価: <grading>` / `予習復習: <preAndPostStudy>` / `教科書: <textbook>` のうち非空のもの
-   - 失敗時は警告ログを出して `null`
-4. 今日・明日それぞれについて、該当科目へ `DetailedClassSummary` を構築:
-   - `classInfo`（上記発生時刻）、`syllabus`（`fetchSyllabusWithCache` から `DetailedClassNotes`。同一 `courseCode` の Promise は Map で使い回す）、関連課題・コンテンツ・お知らせ、`errors`
-   - シラバス失敗は当該科目の `errors` に記録し `syllabus: null`
-5. 結果を `summary.json` に保存（スキーマは §9）
+   - シラバスが無ければ `null`
+3. 今日・明日それぞれについて、該当科目へ `DetailedClassSummary` を構築:
+   - `classInfo`（上記発生時刻）、`syllabus`（`DetailedClassNotes`）、関連課題・コンテンツ・お知らせ（上の関連付け規則）、`errors`
+   - シラバスのキャッシュが無い科目は当該科目の `errors` に記録し `syllabus: null`（取得はしない。補完は daily）
+4. 入力が `null` のソース（`registration-data.json` など）は `errors` に「<ファイル> がありません」を積み、`sourceStatus` の `available` を false にする
+5. 結果は `scripts/toyo-build.ts` が `output/toyo/summary.json` に書く（スキーマは §9）
+
+`build/` 配下（`course-index.ts` / `course-lookup.ts` / `summary.ts` / `context.ts` / `context-markdown.ts`）が Playwright・`lib/toyo.ts`・`lib/toyo-enrollment.ts`・`fetch(` を使っていないことは `scripts/dev/course-index.test.ts` が検査する。
 
 ### 7.8 `toyo-build-timetable.py` — 時間割 xlsx 生成
 
@@ -528,9 +540,10 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 ### 8.5 `toyo-sync.ts`（`toyo:sync`）
 
 1. `scrapeEnrollmentData` → `writeEnrollmentArtifacts`
-2. `Promise.all` で `buildDiscordSummary(enrollment)` と `fetchAcademicCalendar(enrollment.academicYear)` を並行実行（カレンダー失敗は警告のみで非致命）
-3. `writeDiscordSummary`
-4. `fetchStatus === 'error'` は警告表示。最後にステータスと `summary.json` パスを表示
+2. ACE 課題・コンテンツ・お知らせ・祝日を直列に取得（Playwright セッションは同時に 1 つ）。ACE の各取得が不調でも警告を出して続行し（結果は `summary.json` の `sourceStatus` / `errors` と agent-context の Warnings に出る）、カレンダー失敗も非致命。失敗とみなすのは履修登録確認表の取得が落ちたときだけ
+3. `toyo:build`（index → summary → context）を実行。`--no-build` で省略（daily は最後にまとめて実行するため付ける）
+4. シラバスは取得しない（daily の「index の欠けの補完」か `toyo:syllabus` / `toyo:syllabus:seed`）
+5. `fetchStatus === 'error'` は警告表示。最後に 1 行サマリを表示
 
 ### 8.6 `toyo-fetch-calendar.ts`（`toyo:calendar`）
 
@@ -566,33 +579,32 @@ CLI:
   - JSON: `{ fetchedAt, inputCourse, syllabus }`
   - Markdown: 科目名見出し + メタ情報箇条書き（取得日時/授業コード/担当者/時間割/教室/授業形態/実施形態/参照元）+ 固定セクション `学修到達目標` `講義スケジュール` `指導方法` `事前・事後学修` `成績評価` `テキスト`（空は `(空)`）
 
-### 8.9 `toyo-context.ts`（`toyo:context`）
+### 8.9 `toyo-context.ts`（`toyo:context`）と `toyo-build.ts`（`toyo:build`）
 
-CLI:
+`toyo:build` は index → summary → context を順に作る（各段 1 行サマリ）。取得はしない。`toyo:context` は最後の段だけを単独で実行する薄い CLI で、ファイルを読んで `build/context.ts`（文脈データの組み立て、純粋）と `build/context-markdown.ts`（Markdown 整形、純粋）に渡し、書き出すだけ。
+
+CLI（`toyo:context`）:
 
 ```
---sync                  常に npm run toyo:sync を実行してから構築
---no-sync               同期せず既存ファイルのみ使用（--sync と排他）
---max-age-minutes <n>   summary.json が n 分より古ければ同期（既定 30）
+--max-age-minutes <n>   summary.json が n 分より古ければ stale と警告する（既定 30）
 --horizon-days <n>      課題の締切ホライズン日数（既定 7）
 --print                 全文を標準出力に出す（既定は 1 行サマリ `[context] <JST> today=n tomorrow=m warnings=k` のみ）
 --format markdown|json  --print のときの標準出力形式（既定 markdown。ファイルは常時両方書き出し）
+--no-sync               互換のため受け付けるが無視する（`--sync` は廃止でエラー）
 ```
 
-処理:
+処理（`buildContext(inputs, options, now)`）:
 
-1. `summary.json` を読む。`generatedAt` からの経過が `maxAgeMinutes` 超過、またはファイル不在を「stale」と判定
-2. 同期要否: `--sync`、または `--no-sync` でなく stale → `npm run toyo:sync` を spawn（子の stdout/stderr は自プロセスの stderr へ転送し、末尾 20 行を保持）。結果は `SyncAttempt { status: not-needed|skipped-by-option|succeeded|failed, reason, exitCode, outputTail }` として記録
-3. 同期後に `summary.json` を再読込。なお不在なら例外
-4. `registration-data.json`・`academic-calendar.json` も読み、コンテキストを構築:
+1. `summary.json` を読む。不在なら例外（`npm run toyo:build` を案内）。`generatedAt` からの経過が `maxAgeMinutes` 超過なら `freshness.stale`。**古くても取得（`toyo:sync`）は走らせない**。古さは freshness と warnings で表すだけ
+2. `registration-data.json`・`academic-calendar.json`・`data/academic-schedule.json`・`data/grading-rules.json`・`course-index.json`・`health.json` を読み（無ければ `null`）、コンテキストを構築:
    - `today`/`tomorrow`: 日付は `summary.generatedAt` 基準の JST（フォールバックは現在時刻）、祝日名を `nationalHolidays` から引く
    - `classes`: `summary.todayClasses`/`tomorrowClasses` を圧縮形式へ変換（§9 `AgentClass`）
    - `assignments`: `dueAt` が `[now-1h, now+horizonDays]` 内のもの（最大 20 件）と `dueAt === null`（最大 12 件）に分割
    - `announcements`: カテゴリ `休講`/`補講`/`教室変更`（最大 12 件）とその他（最大 6 件）に分割
-   - `warnings`: 同期失敗・stale・portal `fetchStatus` が `error`/`empty`・ACE 各ソース不可・summary 内 errors・registration 不在・fetchStatus 不一致・カレンダー不在/エラー、定期ジョブの失敗・停止（`output/toyo/health.json`、詳細は runbook「失敗の検知と通知」）、の各条件でメッセージを積む
-   - `agentNotes`: 利用上の注意 5 項目（固定文。鮮度・エラー時の扱い・`dueAt=null` の扱い・`basic-info.md` 参照等）
+   - `warnings`: stale・portal `fetchStatus` が `error`/`empty`・ACE 各ソース不可・summary 内 errors・registration 不在・fetchStatus 不一致・カレンダー不在/エラー、定期ジョブの失敗・停止（`output/toyo/health.json`、詳細は runbook「失敗の検知と通知」）、index の欠け（今学期の科目のシラバス・ACE 反映・評価ルール）の各条件でメッセージを積む
+   - `agentNotes`: 利用上の注意（固定文。鮮度・エラー時の扱い・`dueAt=null` の扱い・`basic-info.md` 参照等）
    - `sourceFiles`: 参照ファイルの絶対パス一覧
-5. `agent-context.json`（2 スペース整形）と `agent-context.md`（§9 の形式）を書き出し、`--print` のときだけ `--format` に応じてどちらかを標準出力
+3. `agent-context.json`（2 スペース整形）と `agent-context.md`（§9 の形式）を書き出し、`--print` のときだけ `--format` に応じてどちらかを標準出力
 
 ## 9. データスキーマ
 
@@ -702,13 +714,13 @@ CLI:
 }
 ```
 
-### 9.6 `summary.json`（DiscordSummary）
+### 9.6 `output/toyo/summary.json`（Summary）
 
 ```jsonc
 {
   "generatedAt": "<ISO8601>",
   "timezone": "Asia/Tokyo",
-  "nextClass": "DiscordCourseSummary | null",
+  "nextClass": "CourseSummary | null",
   "nextClassNotes": {
     "checkedAt": "YYYY-MM-DD",
     "firstTopic": "string | null",
@@ -716,9 +728,9 @@ CLI:
   } | null,
   "todayClasses": ["DetailedClassSummary"],
   "tomorrowClasses": ["DetailedClassSummary"],
-  "upcomingAssignments": ["Assignment"],   // ソート済み全件
-  "courseContents": ["CourseContent"],     // ソート済み全件
-  "announcements": ["Announcement"],
+  "upcomingAssignments": ["Assignment + courseCode(string|null) + coursework"],   // ソート済み全件。courseCode は index で引いた授業コード（null = 科目不明）
+  "courseContents": ["CourseContent + courseCode"],     // ソート済み全件
+  "announcements": ["Announcement + courseCode"],
   "sourceStatus": {
     "portal": { "available": "boolean", "fetchStatus": "string", "fetchedAt": "<ISO|null>", "path": "string" },
     "toyonetAce": {
@@ -731,7 +743,7 @@ CLI:
 }
 ```
 
-`DiscordCourseSummary`:
+`CourseSummary`:
 
 ```jsonc
 {
@@ -743,7 +755,7 @@ CLI:
 }
 ```
 
-`DetailedClassSummary`: `{ classInfo: DiscordCourseSummary, syllabus: DetailedClassNotes | null, relatedAssignments: Assignment[], relatedContents: CourseContent[], relatedAnnouncements: Announcement[], errors: string[] }`。`DetailedClassNotes` は `SyllabusRecord` の主要フィールド + `firstTopic`。
+`DetailedClassSummary`: `{ classInfo: CourseSummary, syllabus: DetailedClassNotes | null, relatedAssignments: Assignment[], relatedContents: CourseContent[], relatedAnnouncements: Announcement[], errors: string[] }`。`DetailedClassNotes` は `SyllabusRecord` の主要フィールド + `firstTopic`。
 
 ### 9.7 `syllabus/<stem>.json`
 
@@ -768,11 +780,10 @@ CLI:
 {
   "builtAt": "<ISO8601>",
   "timezone": "Asia/Tokyo",
-  "sync": { "status": "not-needed|skipped-by-option|succeeded|failed", "reason": "string", "exitCode": "number|null", "outputTail": ["string"] },
   "freshness": { "summaryGeneratedAt": "<ISO|null>", "ageMinutes": "number|null", "maxAgeMinutes": "number", "stale": "boolean" },
   "today":    { "date": "YYYY-MM-DD", "nationalHoliday": "string|null", "classes": ["AgentClass"] },
   "tomorrow": { "date": "YYYY-MM-DD", "nationalHoliday": "string|null", "classes": ["AgentClass"] },
-  "nextClass": "DiscordCourseSummary | null",
+  "nextClass": "CourseSummary | null",
   "nextClassNotes": "NextClassNotes | null",
   "assignments": {
     "horizonDays": "number",
@@ -783,7 +794,7 @@ CLI:
     "important": ["AgentAnnouncement"],        // ≤12、休講/補講/教室変更
     "recentOther": ["AgentAnnouncement"]       // ≤6
   },
-  "sourceStatus": "DiscordSummary.sourceStatus",
+  "sourceStatus": "Summary.sourceStatus",
   "warnings": ["string"],
   "sourceFiles": { "summary": "path", "enrollment": "path", "academicCalendar": "path", "basicInfo": "path", "contextJson": "path", "contextMarkdown": "path" },
   "agentNotes": ["string"]
@@ -843,5 +854,5 @@ CLI:
 4. `npm run toyo:export-enrollment` で `registration-data.json`・`registration-summary.md`・`toyo-timetable.xlsx` が生成される
 5. `npm run toyo:sync` で §9 の全出力が生成され、`summary.json` が `sourceStatus` を含む
 6. `npm run toyo:syllabus -- --list` が科目一覧を表示し、`--course-code` で `syllabus/<code>.json`・`.md` が生成される
-7. `npm run toyo:context` で `agent-context.json`・`.md` が生成され、stale 時に `toyo:sync` が自動実行される
+7. `npm run toyo:build` で `course-index.json`・`summary.json`・`agent-context.json`・`.md` が生成される（取得はせず、古さは freshness と warnings に出る）
 8. セッション喪失時に各収集処理が `recoverToyoSessionIfNeeded` 経由で自動回復を試み、失敗時は例外・スナップショット・`available: false` のいずれかの形で検知可能に残る
