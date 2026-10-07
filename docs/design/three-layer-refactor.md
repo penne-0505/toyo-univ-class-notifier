@@ -125,8 +125,56 @@ npm scripts と systemd ユニットの名前は変えない。
    - summary の全体一覧（`upcomingAssignments` / `courseContents` / `announcements`）の各項目に、index で引いた授業コード `courseCode` を付けた。引けないもの（履修外の ACE コース、全学のお知らせなど）は `null`（科目不明）で残す。お知らせは `courseNameHint` を引き、hint が無いときだけタイトルに科目名のキーが丸ごと（3 文字以上）含まれるものを引く。先頭 4 文字の部分一致はやめた。
    - agent-context から `sync` フィールド（と Markdown の `- sync:` 行）を削除した。`--sync` は廃止（エラー）、`--no-sync` は受け付けて無視する。
    - 取得と build の線引き: `toyo:sync` は ACE 各取得の不調では失敗にしない（履修登録確認表の取得が落ちたときだけ失敗）。`toyo:daily` のシラバス補完の段は警告にとどめ成功扱い。`toyo:coursework` / `toyo:sync` の `--no-summary` は `--no-build` になった（daily は最後にまとめて build するため付ける）。
-   - 残した課題: `toyo-coursework.service` の ExecStart に残っている `toyo:context -- --no-sync` は、`toyo:coursework` が `toyo:build` を呼ぶようになったため冗長（無害）。ユニットを触るときに外してよい。Worker の旧パスのフォールバックと publish の `LEGACY_PATTERNS` は 2026-10 以降に削除する。
+   - 残した課題: `toyo-coursework.service` の ExecStart に残っている `toyo:context -- --no-sync` は、`toyo:coursework` が `toyo:build` を呼ぶようになったため冗長（無害）。ユニットを触るときに外してよい（→ ステップ 3 で外した）。Worker の旧パスのフォールバックと publish の `LEGACY_PATTERNS` は 2026-10 以降に削除する。
 3. **ディレクトリの移動**: 機械的な移動と import の修正のみ。挙動は変えない。
+   - **完了（削除・整理 b7b1793、移動 a3e4a9f、ドキュメントはこのメモを更新したコミット、2026-10-08）**。移動前後で `summary.json` / `agent-context.json` / `course-index.json` を `scripts/dev/compare-golden.ts` で突き合わせ、時刻以外の差分なし。
+   - 同時に行った削除（ユーザー了承済み）: 時間割の Excel 出力（`toyo-build-timetable.py`、`runPythonWorkbookBuilder`、`output/spreadsheet/`、Python 仮想環境の説明、`.gitignore` の Python 行）、重複コマンド `toyo:refresh-session`（`toyo:login` の別名）と `toyo:run`、`toyo-coursework.service` の冗長な `toyo:context -- --no-sync`。`toyo-context` の `--no-sync` は受け付けて無視する挙動を残した（クラウド側の手順に残っている可能性があるため）。「残した課題」に書いた `--no-sync` の件はこれで解消。
+   - 配置の規則: ネットワーク・ブラウザを使うものは `fetch/`、ファイルだけ読んで派生物を作るものは `build/`、外部に送るものは `publish/`、複数の段をつなぐものは `jobs/`。`scripts/toyo-*.ts` は npm scripts の入口として名前を残し、本体の `main()` を呼ぶだけのラッパーにした（本体は `main` を export し、読み込んだだけでは実行されない）。`toyo-grading-rules` だけは元が `main` を export しておらず読み込み時に実行されていたので、export する形に直した。
+   - 判断が分かれた配置:
+     - `jobs/build.ts`・`jobs/build-index.ts`・`jobs/build-context.ts`（旧 `toyo-build` / `toyo-build-index` / `toyo-context`）: 「ファイルだけ読む」ので `build/` の規則に合うが、`build-context` の入力に `lib/toyo-health`（→ `publish/toyo-api` のネットワーク）が混ざるため `build/` に置くと純粋性の検査を通らない。`toyo:build` の 3 段なので一緒に `jobs/` へ置いた。`build/` は純粋関数だけのまま。
+     - `build/grading-rules.ts`・`build/academic-schedule.ts`: ファイルだけを読み（前者は `data/` に下書きを書く）、import も純粋な `lib/` と型だけなので `build/` に置いた。`scripts/dev/course-index.test.ts` の検査対象になる。
+     - `fetch/seed-syllabus.ts`: ネットワークもブラウザも使わないが、取得層の出力（`syllabus/<授業コード>.json`）を作り、`fetch/syllabus.ts` の `writeSyllabusArtifacts` を共有するので `fetch/`。
+     - `fetch/register.ts`（`toyo:register`）・`fetch/login.ts`・`fetch/check.ts`: ブラウザを使うので `fetch/`。登録の送信は「取得」ではないが、ほかに置く層が無い。
+     - `jobs/health.ts`（`toyo:health` の CLI）: ジョブの成否の記録と通知。本体の `lib/toyo-health.ts` は指定どおり `lib/`。`lib/toyo-health` が `publish/toyo-api` を import するので、`lib/` から `publish/` への依存が 1 本だけある。
+     - `lib/toyo-env`・`lib/syllabus-pool`・`lib/toyo-paths` は `lib/` の純粋モジュール。`publish/publish.ts` は `repoRoot` を `fetch/toyo-enrollment`（playwright を読み込む）の再エクスポートではなく `lib/toyo-paths` から読むようにした（値は同じ）。
+   - 依存の向き（現状）: `build/` → `lib/` の純粋モジュールのみ（`fetch/` は型だけ）。`fetch/` → `lib/`。`publish/` → `lib/`。`jobs/` → すべて。`lib/toyo-health` → `publish/toyo-api` の 1 本だけが例外。
+   - 旧パス → 新パス（`scripts/` 以下。入口の `scripts/toyo-*.ts` は同じ名前で残り、本体を呼ぶ）:
+
+     | 旧 | 新 |
+     | --- | --- |
+     | `lib/toyonet-ace.ts` | `fetch/toyonet-ace.ts` |
+     | `lib/toyonet-ace-coursework.ts` | `fetch/toyonet-ace-coursework.ts` |
+     | `lib/toyo-announcements.ts` | `fetch/toyo-announcements.ts` |
+     | `lib/toyo-enrollment.ts` | `fetch/toyo-enrollment.ts` |
+     | `lib/toyo-syllabus.ts` | `fetch/toyo-syllabus.ts` |
+     | `lib/toyo-academic-calendar.ts` | `fetch/toyo-academic-calendar.ts` |
+     | `lib/toyo-api.ts` | `publish/toyo-api.ts` |
+     | `toyo-fetch-credits.ts` | `fetch/credits.ts` |
+     | `toyo-fetch-lottery.ts` | `fetch/lottery.ts` |
+     | `toyo-fetch-registration-candidates.ts` | `fetch/registration-candidates.ts` |
+     | `toyo-fetch-syllabus.ts` | `fetch/syllabus.ts` |
+     | `toyo-seed-syllabus.ts` | `fetch/seed-syllabus.ts` |
+     | `toyo-fetch-announcements.ts` | `fetch/announcements.ts` |
+     | `toyo-fetch-calendar.ts` | `fetch/calendar.ts` |
+     | `toyo-export-enrollment.ts` | `fetch/export-enrollment.ts` |
+     | `toyo-login.ts` | `fetch/login.ts` |
+     | `toyo-check.ts` | `fetch/check.ts` |
+     | `toyo-register.ts` | `fetch/register.ts` |
+     | `toyo-publish.ts` | `publish/publish.ts` |
+     | `toyo-fetch-coursework.ts` | `jobs/coursework.ts` |
+     | `toyo-sync.ts` | `jobs/sync.ts` |
+     | `toyo-watch.ts` | `jobs/watch.ts` |
+     | `toyo-daily.ts` | `jobs/daily.ts` |
+     | `toyo-health.ts` | `jobs/health.ts` |
+     | `toyo-build.ts` | `jobs/build.ts` |
+     | `toyo-build-index.ts` | `jobs/build-index.ts` |
+     | `toyo-context.ts` | `jobs/build-context.ts` |
+     | `toyo-grading-rules.ts` | `build/grading-rules.ts` |
+     | `toyo-academic-schedule.ts` | `build/academic-schedule.ts` |
+     | `toyo-build-timetable.py`、`toyo-run.ts` | 削除 |
+
+     `lib/` に残ったもの: `toyo.ts` `toyo-env` `toyo-paths` `course-key` `course-code` `coursework-model` `syllabus-cache` `syllabus-pool` `toyo-normalize` `toyo-health` `toyo-notify` `toyo-academic-schedule` `toyo-grading-rules`。`build/` の既存の 5 モジュールと `dev/` は動かしていない。
+   - 純粋性の検査: `scripts/dev/course-index.test.ts` に、`scripts/lib/` の純粋モジュール（`course-key` `course-code` `coursework-model` `syllabus-cache` `syllabus-pool` `toyo-paths` `toyo-env` `toyo-normalize` `toyo-academic-schedule` `toyo-grading-rules`）が、値の import を Node 標準と純粋な lib に限ること・`fetch(` を呼ばないこと・読み込んでも playwright が読み込まれないことの検査を足した。
 
 各コミットの後にタイマーを 1 周させて health が success であることを確認する。
 

@@ -10,9 +10,9 @@
 
 ### 1.2 スコープ
 
-本仕様の対象は `scripts/` 配下の TypeScript エントリポイント 9 本、共有ライブラリ 7 本、Python 補助スクリプト 1 本である。
+本仕様の対象は `scripts/` 配下の TypeScript（npm scripts の入口 `scripts/toyo-*.ts`、取得層 `scripts/fetch/`、組み立て層 `scripts/build/`、配信層 `scripts/publish/`、ジョブ `scripts/jobs/`、共通 `scripts/lib/`）である。配置の規則は §3.3。
 
-- **対象**: `scripts/*.ts`, `scripts/lib/*.ts`, `scripts/toyo-build-timetable.py`, `package.json` の npm scripts 定義
+- **対象**: `scripts/**/*.ts`（`scripts/dev/` の開発用ツール・テストを除く）, `package.json` の npm scripts 定義
 - **対象外**: `.claude/commands/`（LLM Skill 定義）、`tests/`、`docs/` の内容。ただしこれらは `output/` のファイル形式を消費するため、出力スキーマは下流互換を維持すること
 
 ### 1.3 処理フロー概要
@@ -87,6 +87,31 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 | `output/toyo/summary.json` | 組み立て層（summary） | 全ソース集約 JSON |
 | `output/toyo/agent-context.json` / `.md` | コンテキスト生成 | エージェント向け圧縮コンテキスト |
 
+### 3.3 コードの配置（scripts/）
+
+```
+scripts/
+  toyo-*.ts   npm scripts の入口。対応モジュールの main() を呼ぶだけの薄いラッパー（名前は npm scripts と systemd が参照するので変えない）
+  fetch/      取得層。ブラウザ・HTTP を使い、1 ソースを取って output/toyo/<source>.json に落とす
+  build/      組み立て層。ファイルだけを読んで派生物を作る。Playwright・ネットワークは使わない
+  publish/    配信層。toyo-data（git）と Worker に送る
+  jobs/       ジョブ。複数の段をつなぐ（watch / coursework / daily / sync、toyo:build の 3 段、health）
+  lib/        共通（セッション・ブラウザ起動、env、パス、科目キー、正規化、health、notify など）
+  dev/        開発用ツールとテスト（npm scripts からは呼ばない）
+```
+
+判断の基準: ネットワーク・ブラウザを使うものは `fetch/`、ファイルだけ読んで派生物を作るものは `build/`、外部に送るものは `publish/`、複数の段をつなぐものは `jobs/`。純粋なパーサ（テキスト → JSON）は取得関数と同じファイルに置き、export する。
+
+| ディレクトリ | ファイル |
+|---|---|
+| `fetch/` | `toyo-enrollment`（履修登録確認表の取得・整形、型 `Course` / `EnrollmentData`）、`toyonet-ace`（課題・コンテンツ）、`toyonet-ace-coursework`（提出状況）、`toyo-announcements`、`toyo-academic-calendar`、`toyo-syllabus`（以上は §7）。CLI の本体: `credits` `lottery` `registration-candidates` `syllabus` `seed-syllabus` `announcements` `calendar` `export-enrollment` `login` `check` `register` |
+| `build/` | `course-index` `course-lookup` `summary` `context` `context-markdown`（純粋関数）、`grading-rules`（評価ルールの下書き生成。ファイルを読み data/ に書く）、`academic-schedule`（学年暦の表示） |
+| `publish/` | `publish`（toyo:publish の本体）、`toyo-api`（Worker の REST クライアント） |
+| `jobs/` | `watch` `coursework` `daily` `sync` `health`、`build`（index → summary → context の順に実行。summary の入出力もここ）、`build-index`・`build-context`（`toyo:build` の各段の入出力） |
+| `lib/` | 純粋: `course-key` `course-code` `coursework-model` `syllabus-cache` `syllabus-pool` `toyo-paths` `toyo-env` `toyo-normalize` `toyo-academic-schedule` `toyo-grading-rules`。それ以外: `toyo`（ブラウザ・セッション）、`toyo-health`（→ `publish/toyo-api`）、`toyo-notify` |
+
+依存の向き: `build/` は値として import してよいのが Node 標準・同じディレクトリ・`lib/` の純粋モジュールだけ（`fetch/` の型は `import type` で参照できる）。`lib/` の純粋モジュール同士も同様。どちらも `scripts/dev/course-index.test.ts` が検査する。`jobs/build-context` は入力に `lib/toyo-health`（→ `publish/toyo-api` のネットワーク）を使うため、同じ段の `jobs/build-index`・`jobs/build` と並べて `jobs/` に置いた。
+
 ## 4. 環境変数
 
 ### 4.1 env ファイル読み込み
@@ -111,23 +136,33 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 
 ## 5. コマンド一覧（npm scripts）
 
-| コマンド | エントリポイント | 概要 |
-|---|---|---|
-| `typecheck` | `tsc --noEmit` | 型チェック |
-| `toyo:login` | `scripts/toyo-login.ts` | 専用プロファイルで GUI ログインし storageState を保存（セッション期限切れ時の再ログインにも使う） |
-| `toyo:check` | `scripts/toyo-check.ts` | 保存セッションの有効性を確認 |
-| `toyo:export-enrollment` | `scripts/toyo-export-enrollment.ts` | 履修登録確認表のみ取得（JSON と Markdown を出力） |
-| `toyo:syllabus` | `scripts/toyo-fetch-syllabus.ts` | 指定科目のシラバス取得 |
-| `toyo:calendar` | `scripts/toyo-fetch-calendar.ts` | 祝日データ取得 |
-| `toyo:announcements` | `scripts/toyo-fetch-announcements.ts` | ACE コースニュース取得 |
-| `toyo:sync` | `scripts/toyo-sync.ts` | 履修・課題・コンテンツ・お知らせ・祝日を取得 → `toyo:build`（`--no-build` で省略） |
-| `toyo:build` | `scripts/toyo-build.ts` | 組み立て層をまとめて実行: index → summary → context（取得はしない） |
-| `toyo:build:index` | `scripts/toyo-build-index.ts` | `course-index.json` だけを作る |
-| `toyo:context` | `scripts/toyo-context.ts` | エージェント向け圧縮コンテキスト生成（読み込み・書き出しだけの薄い CLI。組み立ては `scripts/build/context.ts`） |
-| `toyo:candidates` | `scripts/toyo-fetch-registration-candidates.ts` | 履修登録画面の全コマから登録可能科目（＋シラバス）を取得 |
-| `toyo:credits` | `scripts/toyo-fetch-credits.ts` | 単位数集計表・履修修得科目一覧を取得 |
-| `toyo:lottery` | `scripts/toyo-fetch-lottery.ts` | 抽選実施科目一覧と当落（○/×）を取得 |
-| `toyo:register` | `scripts/toyo-register.ts` | 履修登録画面に科目を入れて送信（既定 dry-run） |
+各コマンドの入口は `scripts/toyo-*.ts`（薄いラッパー）で、本体の `main()` は下表の「本体」にある。
+
+| コマンド | エントリポイント | 本体 | 概要 |
+|---|---|---|---|
+| `typecheck` | `tsc --noEmit` | — | 型チェック |
+| `toyo:login` | `scripts/toyo-login.ts` | `fetch/login.ts` | 専用プロファイルで GUI ログインし storageState を保存（セッション期限切れ時の再ログインにも使う） |
+| `toyo:check` | `scripts/toyo-check.ts` | `fetch/check.ts` | 保存セッションの有効性を確認 |
+| `toyo:export-enrollment` | `scripts/toyo-export-enrollment.ts` | `fetch/export-enrollment.ts` | 履修登録確認表のみ取得（JSON と Markdown を出力） |
+| `toyo:syllabus` | `scripts/toyo-fetch-syllabus.ts` | `fetch/syllabus.ts` | 指定科目のシラバス取得 |
+| `toyo:syllabus:seed` | `scripts/toyo-seed-syllabus.ts` | `fetch/seed-syllabus.ts` | pool / 候補ファイルのシラバス本文から登録科目のキャッシュを書く（ブラウザ不要） |
+| `toyo:calendar` | `scripts/toyo-fetch-calendar.ts` | `fetch/calendar.ts` | 祝日データ取得 |
+| `toyo:announcements` | `scripts/toyo-fetch-announcements.ts` | `fetch/announcements.ts` | ACE コースニュース取得 |
+| `toyo:coursework` | `scripts/toyo-fetch-coursework.ts` | `jobs/coursework.ts` | ACE の提出状況を取得 → `toyo:build`（`--no-build` で省略） |
+| `toyo:sync` | `scripts/toyo-sync.ts` | `jobs/sync.ts` | 履修・課題・コンテンツ・お知らせ・祝日を取得 → `toyo:build`（`--no-build` で省略） |
+| `toyo:build` | `scripts/toyo-build.ts` | `jobs/build.ts` | 組み立て層をまとめて実行: index → summary → context（取得はしない） |
+| `toyo:build:index` | `scripts/toyo-build-index.ts` | `jobs/build-index.ts` | `course-index.json` だけを作る |
+| `toyo:context` | `scripts/toyo-context.ts` | `jobs/build-context.ts` | エージェント向け圧縮コンテキスト生成（読み込み・書き出しだけの薄い CLI。組み立ては `build/context.ts`） |
+| `toyo:candidates` | `scripts/toyo-fetch-registration-candidates.ts` | `fetch/registration-candidates.ts` | 履修登録画面の全コマから登録可能科目（＋シラバス）を取得 |
+| `toyo:credits` | `scripts/toyo-fetch-credits.ts` | `fetch/credits.ts` | 単位数集計表・履修修得科目一覧を取得 |
+| `toyo:lottery` | `scripts/toyo-fetch-lottery.ts` | `fetch/lottery.ts` | 抽選実施科目一覧と当落（○/×）を取得 |
+| `toyo:register` | `scripts/toyo-register.ts` | `fetch/register.ts` | 履修登録画面に科目を入れて送信（既定 dry-run） |
+| `toyo:schedule` | `scripts/toyo-academic-schedule.ts` | `build/academic-schedule.ts` | 学年暦から指定日の進行中の期間・第N回授業日を表示 |
+| `toyo:grading-rules` | `scripts/toyo-grading-rules.ts` | `build/grading-rules.ts` | シラバスから成績配分・足切りの下書きを `data/grading-rules.json` に書く |
+| `toyo:publish` | `scripts/toyo-publish.ts` | `publish/publish.ts` | `output/toyo/**`・`data/**` を toyo-data と Worker に配信 |
+| `toyo:watch` | `scripts/toyo-watch.ts` | `jobs/watch.ts` | 課題・お知らせだけ取得し、変化があれば build → publish（5 分タイマー） |
+| `toyo:daily` | `scripts/toyo-daily.ts` | `jobs/daily.ts` | 全取得 → シラバス補完 → build → publish（24 時間タイマー） |
+| `toyo:health` | `scripts/toyo-health.ts` | `jobs/health.ts` | 定期ジョブの失敗検知と通知 |
 
 ## 6. 外部システムと URL
 
@@ -150,7 +185,7 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 | ACE リマインダ一覧 | `https://www.ace.toyo.ac.jp/ct/home_library_reminder?count=50` |
 | 内閣府 祝日 CSV | `https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv` |
 
-## 7. 共通ライブラリ仕様
+## 7. モジュール仕様（lib / fetch / build）
 
 ### 7.1 `lib/toyo.ts` — ブラウザ・セッション基盤
 
@@ -232,7 +267,7 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 - `artifactDir/<safeTag>.json` に以下を保存: `{ title, url, headings(≤20件), links(≤30件, {text, href}), textPreview(≤3000文字) }`
   - headings は `h1, h2, h3` の textContent、links は `a` 要素から抽出。textPreview は body innerText の空白正規化済み先頭部分
 
-### 7.2 `lib/toyo-enrollment.ts` — 履修登録確認表
+### 7.2 `fetch/toyo-enrollment.ts` — 履修登録確認表
 
 #### 取得処理 `scrapeEnrollmentData()`
 
@@ -272,7 +307,7 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 
 - `writeEnrollmentArtifacts(data)`: `registration-data.json`（2 スペース整形 JSON）と `registration-summary.md` を書き出す
 
-### 7.3 `lib/toyonet-ace.ts` — ACE 課題・コースコンテンツ
+### 7.3 `fetch/toyonet-ace.ts` — ACE 課題・コースコンテンツ
 
 #### ページ状態診断
 
@@ -322,7 +357,7 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 - `/link_iframe_balloon` で終わる URL は `?url=` パラメータを実 URL として展開
 - URL で重複除去
 
-### 7.4 `lib/toyo-announcements.ts` — ACE コースニュース
+### 7.4 `fetch/toyo-announcements.ts` — ACE コースニュース
 
 #### 取得対象
 
@@ -349,7 +384,7 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 5. 行単位の失敗は `errors` に追記して継続。`announcements.json` に `{ fetchedAt, source: 'toyonet-ace', available: true, announcements, errors }` を保存
 6. 致命的例外時はスナップショット `toyonet-ace-announcements-error` を保存し、`{ available: false, announcements: [], errors: [...] }` を（書き込みも best-effort で）返す
 
-### 7.5 `lib/toyo-academic-calendar.ts` — 祝日
+### 7.5 `fetch/toyo-academic-calendar.ts` — 祝日
 
 `fetchAcademicCalendar(academicYear)`:
 
@@ -361,7 +396,7 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 
 補助 API: `isNationalHoliday(holidays, dateStr)`、`readAcademicCalendar()`（不在・パース失敗時 `null`）。
 
-### 7.6 `lib/toyo-syllabus.ts` — シラバス
+### 7.6 `fetch/toyo-syllabus.ts` — シラバス
 
 #### 検索・候補抽出
 
@@ -474,13 +509,13 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
    - `classInfo`（上記発生時刻）、`syllabus`（`DetailedClassNotes`）、関連課題・コンテンツ・お知らせ（上の関連付け規則）、`errors`
    - シラバスのキャッシュが無い科目は当該科目の `errors` に記録し `syllabus: null`（取得はしない。補完は daily）
 4. 入力が `null` のソース（`registration-data.json` など）は `errors` に「<ファイル> がありません」を積み、`sourceStatus` の `available` を false にする
-5. 結果は `scripts/toyo-build.ts` が `output/toyo/summary.json` に書く（スキーマは §9）
+5. 結果は `scripts/jobs/build.ts` が `output/toyo/summary.json` に書く（スキーマは §9）
 
-`build/` 配下（`course-index.ts` / `course-lookup.ts` / `summary.ts` / `context.ts` / `context-markdown.ts`）が Playwright・`lib/toyo.ts`・`lib/toyo-enrollment.ts`・`fetch(` を使っていないことは `scripts/dev/course-index.test.ts` が検査する。
+`build/` 配下（`course-index.ts` / `course-lookup.ts` / `summary.ts` / `context.ts` / `context-markdown.ts`）が Playwright・`lib/toyo.ts`・`fetch/`・`fetch(` を使っていないことは `scripts/dev/course-index.test.ts` が検査する。
 
 ## 8. エントリポイント仕様
 
-全スクリプト共通: `main()` を export し、`require.main === module` ガード下で実行。catch でスタックまたはメッセージを stderr に出力し `process.exit(1)`。
+各 `scripts/toyo-*.ts` は本体モジュール（§5 の「本体」）の `main()` を `require.main === module` ガード下で呼ぶだけのラッパーで、catch でスタックまたはメッセージを stderr に出力し `process.exit(1)` する。本体は `main()` を export し、読み込んだだけでは何も実行しない。以降の見出しはラッパーのファイル名で示し、本体の場所は §5 の表を参照する。
 
 ### 8.1 `toyo-login.ts`（`toyo:login`）
 

@@ -15,12 +15,18 @@
 ## アーキテクチャ
 
 ```
-Scripts（データ取得・core）
+Scripts（scripts/）
+  fetch/   取得層  ブラウザ・HTTP で 1 ソースずつ取る
+  build/   組み立て層  ファイルだけを読んで index・summary・context を作る
+  publish/ 配信層  toyo-data と Worker に送る
+  jobs/    watch・coursework・daily が上の 3 層をつなぐ
   ↓
 output/ ファイル群（キャッシュ）
   ↓
 Skills（LLMとの対話） / Worker・toyo-data（クラウドのエージェント向け）
 ```
+
+`scripts/toyo-*.ts` は npm scripts の入口（本体の `main()` を呼ぶだけのラッパー）。ファイルの配置と判断の基準は `SPEC.md` の §3.3。
 
 Skillsは `.claude/commands/toyo.md` として定義。LLMが質問を受けたとき、このSkillがScriptを呼び出してデータを取得・回答する。
 
@@ -77,7 +83,7 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 ## 履修登録画面の制約（2026-09 に判明）
 
-- 履修登録（正規登録期間）は `/univision/action/in/f07/Usin070311`。各コマの科目一覧（`Usin071640`）とシラバス（`Uscm030170`）は、画面のボタンから開くサブウィンドウでしか表示されない。URL を直接開くと「不正な操作」になる。`scripts/toyo-fetch-registration-candidates.ts` はボタンをクリックしてサブウィンドウを捕捉する。
+- 履修登録（正規登録期間）は `/univision/action/in/f07/Usin070311`。各コマの科目一覧（`Usin071640`）とシラバス（`Uscm030170`）は、画面のボタンから開くサブウィンドウでしか表示されない。URL を直接開くと「不正な操作」になる。`scripts/fetch/registration-candidates.ts` はボタンをクリックしてサブウィンドウを捕捉する。
 - 科目一覧のシラバスボタンは前のサブウィンドウを閉じてから開くので、毎回 `context.waitForEvent('page')` で新しいページを待つ。シラバスを 200 件前後連続で開くと「認証エラー」になり以降のコマが 0 件になるため、認証エラーを検知したら登録画面を開き直す。
 - 英語開講科目は「日本語」ボタンがなく「English」だけ。シラバス取得は English にフォールバックする。
 - 登録の送信は `onExecButtomClick()` → `confirm()` → Ajax POST（`Usin070321`）。応答ヘッダ `x-json` が `{"status":"success"}` なら成功、`error` なら画面にエラー（E）・警告（W）が出て何も登録されない。履修上限（秋学期 24 単位）超過はここで判定される。事前チェックの API はない。

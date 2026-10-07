@@ -5,7 +5,7 @@
 ## アーキテクチャ
 
 ```
-Scripts (scripts/)         ← データ取得 core (Playwright + TypeScript)
+Scripts (scripts/)         ← 取得（fetch）→ 組み立て（build）→ 配信（publish）の 3 層 (Playwright + TypeScript)
    ↓ output/ にキャッシュ
 Skill (.claude/commands/)  ← LLM の対話インターフェース
 toyo:publish               ← ~/toyo-data (GitHub, 正本) と Worker へ配信
@@ -13,13 +13,28 @@ toyo:publish               ← ~/toyo-data (GitHub, 正本) と Worker へ配信
 Worker (worker/)           ← クラウドのエージェント向け REST (Cloudflare Workers + KV, Bearer キー必須)
 ```
 
-- **Scripts**: 履修・シラバス・課題・お知らせ・祝日を取得して `output/` に保存する core 層
+- **Scripts**: 履修・シラバス・課題・お知らせ・祝日を取得して `output/` に保存し（取得層）、ファイルだけを読んで科目の対応表・summary・agent-context を作り（組み立て層）、toyo-data と Worker へ送る（配信層）。配置は下の「ディレクトリ構成」
 - **Skill** (`.claude/commands/toyo.md`): Claude Code から `/project:toyo` で呼び出すLLM用の判断フロー
 - **Worker** (`worker/`): 取得データを KV に持ち、クラウドのエージェントへ REST で返す（詳細は `worker/README.md`）
 
 データの読み手は LLM エージェント（Claude Code の Skill、または Worker の REST / `toyo-data` repo 経由のクラウドのエージェント）です。
 
 2026-10 に Discord bot は廃止しました。通知はこのマシンのデスクトップ通知（`toyo:health`。送り先は `.env.local` で Discord webhook / ntfy も選べます）が担い、外部からの鮮度確認はクラウドの秘書エージェントが `/v1/meta` の `publishedAt` と health で行います。
+
+## ディレクトリ構成（scripts/）
+
+```
+scripts/
+  toyo-*.ts   npm scripts の入口。対応モジュールの main() を呼ぶだけの薄いラッパー
+  fetch/      取得層: ブラウザ・HTTP で 1 ソースずつ取り、output/toyo/<source>.json に落とす
+  build/      組み立て層: ファイルだけを読んで派生物を作る（Playwright もネットワークも使わない）
+  publish/    配信層: toyo-data（git）と Worker へ送る
+  jobs/       ジョブ: 複数の段をつなぐ（watch / coursework / daily / sync、toyo:build の 3 段、health）
+  lib/        共通: セッション・ブラウザ起動、env、パス、科目キー、正規化、health、notify
+  dev/        開発用ツールとテスト（`npx tsx --test scripts/dev/*.test.ts`）
+```
+
+判断の基準は、ネットワーク・ブラウザを使うものは `fetch/`、ファイルだけ読んで派生物を作るものは `build/`、外部に送るものは `publish/`、複数の段をつなぐものは `jobs/`。コマンド名と本体ファイルの対応は `SPEC.md` の §5、各層の詳細は §3.3 と `docs/design/three-layer-refactor.md`。`build/` と `lib/` の純粋モジュールがブラウザ・ネットワークを読み込まないことは `scripts/dev/course-index.test.ts` が検査する。
 
 ## クイックスタート
 
