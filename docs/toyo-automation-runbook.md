@@ -44,7 +44,6 @@ Skillsは `.claude/commands/toyo.md` として定義。LLMが質問を受けた�
 npm run toyo:sync          # 全情報を同期（メイン）
 npm run toyo:check
 npm run toyo:login
-npm run toyo:refresh-session
 npm run toyo:export-enrollment
 npm run toyo:syllabus -- --course-code <授業コード>
 npm run toyo:calendar      # 祝日・学年暦のみ更新
@@ -64,16 +63,15 @@ npm run toyo:grading-rules # シラバスから成績配分・足切りの下書
 
 - `toyo:sync`: 履修情報・ACEお知らせ・課題・コンテンツ・祝日・集約 summary をまとめて更新する。
 - `toyo:check`: 保存済み `storageState` がポータルで有効か確認する。
-- `toyo:login`: GUI でログインし、保存済み `storageState` を更新する。
-- `toyo:refresh-session`: `toyo:login` の別名。期限切れ時に使う。
-- `toyo:export-enrollment`: 履修登録確認表だけを更新する。
+- `toyo:login`: GUI でログインし、保存済み `storageState` を更新する。セッション期限切れ時の再ログインにも使う。
+- `toyo:export-enrollment`: 履修登録確認表だけを更新する（`registration-data.json` と `registration-summary.md`）。
 - `toyo:syllabus`: 履修登録確認表の科目を指定して、シラバスを単体取得する（学期内キャッシュあり）。
 - `toyo:syllabus:seed`: `syllabus-pool/` と最新の `registration-candidates.json`（`--from` 指定時はそのファイルだけ）の `syllabus` 本文から、登録中科目のシラバスキャッシュを一括生成する（時間割検索を経由しない。既存ファイルは `--force` で上書き、`--course-code` で対象を絞る）。daily が index の欠けを埋めるときにも使う。
 - `toyo:build`: 組み立て層（`scripts/build/`）を index → summary → context の順に実行する。ファイルだけを読む純粋処理でブラウザ・ネットワークは使わないので排他不要。どのジョブも取得のあとに呼ぶ。欠けている入力（`null`）は取りに行かず、index の `warnings` と summary の `sourceStatus` / `errors`、agent-context の Warnings で表す（ジョブは失敗にしない）。
 - `toyo:build:index`: `output/toyo/course-index.json` だけを作る。登録科目を追加した直後や ACE への反映確認に手で実行してよい。`warnings` は今学期の科目だけで、「シラバスのキャッシュが無い」「ACE のコース一覧にまだ無い（登録の反映待ちの可能性）」「評価ルールが無い」の 3 種。agent-context の Warnings にも `<科目名>: <警告>` として載る。
 - `toyo:calendar`: 内閣府CSVから祝日データを取得する。
 - `toyo:announcements`: ToyoNet-ACEのお知らせ（休講・補講・教室変更等）を取得する。
-- `toyo:context`: 今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。取得も sync もしない（`summary.json` が古ければ `freshness.stale` と Warnings で表すだけ。`--no-sync` は互換のため受け付けて無視）。標準出力は 1 行サマリ（`[context] <JST> today=n tomorrow=m warnings=k`）で、全文は `--print`（`--format json` と併用可）。定期ジョブが失敗中・停止中なら Warnings に載る（「失敗の検知と通知」参照）。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
+- `toyo:context`: 今日/明日の授業、近い課題、重要なお知らせ、鮮度・警告を `output/toyo/agent-context.json` と `output/toyo/agent-context.md` にまとめる。取得も sync もしない（`summary.json` が古ければ `freshness.stale` と Warnings で表すだけ）。標準出力は 1 行サマリ（`[context] <JST> today=n tomorrow=m warnings=k`）で、全文は `--print`（`--format json` と併用可）。定期ジョブが失敗中・停止中なら Warnings に載る（「失敗の検知と通知」参照）。今日/明日の授業には `sessionNumber`（第N回）と `gradingRules`（配分・足切り）が付き、「Periods」節に今日進行中・7日以内に始まる期間（`academic-schedule.json`）が載る。どちらのファイルも無ければ null / 空配列になるだけで壊れない。
 - `toyo:schedule`: `academic-schedule.json` を読むだけ。`--date 2026-10-07` で任意の日の進行中の期間と各曜日の第N回を確認できる。祝日（`academic-calendar.json`）と `noClassDays` は授業日から除き、`makeupDays` は振替曜日として数える。
 - `toyo:grading-rules`: シラバス本文から正規表現で配分・足切りを抽出する下書き生成。抽出結果は必ず `sourceText` と見比べて直し `reviewed: true` にする。配分合計が 100 にならない科目は `warnings` に入る。
 

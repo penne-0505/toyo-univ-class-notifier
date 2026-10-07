@@ -6,9 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "toyo:login": "tsx ./scripts/toyo-login.ts",
-    "toyo:refresh-session": "tsx ./scripts/toyo-login.ts",
     "toyo:check": "tsx ./scripts/toyo-check.ts",
-    "toyo:run": "tsx ./scripts/toyo-run.ts",
     "toyo:export-enrollment": "tsx ./scripts/toyo-export-enrollment.ts",
     "toyo:syllabus": "tsx ./scripts/toyo-fetch-syllabus.ts",
     "toyo:syllabus:seed": "tsx ./scripts/toyo-seed-syllabus.ts",

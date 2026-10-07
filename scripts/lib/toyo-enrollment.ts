@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import {
   getOrCreatePage,
   launchStateContext,
@@ -57,17 +56,12 @@ function computeFetchStatus(pageTitle: string, courses: Course[]): FetchStatus {
 }
 
 export { repoRoot, outputDir, dataDir };
-export const spreadsheetDir = path.join(repoRoot, 'output', 'spreadsheet');
 export const jsonOutputPath = registrationDataPath;
 export const markdownOutputPath = path.join(outputDir, 'registration-summary.md');
-export const workbookOutputPath = path.join(spreadsheetDir, 'toyo-timetable.xlsx');
 const confirmationUrl = 'https://g-sys.toyo.ac.jp/univision/action/in/f08/Usin080111';
 
 export async function ensureEnrollmentOutputDirs(): Promise<void> {
-  await Promise.all([
-    fs.mkdir(outputDir, { recursive: true }),
-    fs.mkdir(spreadsheetDir, { recursive: true }),
-  ]);
+  await fs.mkdir(outputDir, { recursive: true });
 }
 
 function normalizeDigits(value: string): string {
@@ -153,29 +147,6 @@ export async function writeEnrollmentArtifacts(data: EnrollmentData): Promise<vo
   const markdown = buildEnrollmentMarkdown(data);
   await fs.writeFile(jsonOutputPath, JSON.stringify(data, null, 2), 'utf8');
   await fs.writeFile(markdownOutputPath, markdown, 'utf8');
-}
-
-export async function runPythonWorkbookBuilder(): Promise<void> {
-  const pythonPath = path.join(repoRoot, '.venv', 'bin', 'python');
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      pythonPath,
-      [
-        path.join(repoRoot, 'scripts', 'toyo-build-timetable.py'),
-        jsonOutputPath,
-        workbookOutputPath,
-      ],
-      { stdio: 'inherit' }
-    );
-    child.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`Workbook builder exited with code ${code ?? 'null'}`));
-    });
-    child.on('error', reject);
-  });
 }
 
 export async function scrapeEnrollmentData(): Promise<EnrollmentData> {

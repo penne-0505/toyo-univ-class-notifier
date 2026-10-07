@@ -31,17 +31,16 @@ npm run toyo:login
 npm run toyo:sync
 ```
 
-セッションが切れたら `npm run toyo:refresh-session`（`toyo:login` の別名）で再ログインします。
+セッションが切れたら、もう一度 `npm run toyo:login` で再ログインします。
 
 ## スクリプト一覧
 
 | コマンド | 内容 |
 |---------|------|
-| `npm run toyo:login` | 専用Chromeプロファイルでポータルにログインし、`storageState` を保存 |
-| `npm run toyo:refresh-session` | `toyo:login` の別名（期限切れ時の再ログイン用） |
+| `npm run toyo:login` | 専用Chromeプロファイルでポータルにログインし、`storageState` を保存（セッション期限切れ時の再ログインにも使う） |
 | `npm run toyo:check` | 保存済みセッションが有効か headless で確認 |
 | `npm run toyo:sync [-- --no-build]` | 履修・課題・コンテンツ・お知らせ・祝日をまとめて取得し、`toyo:build` を実行（シラバスは取得しない。`--no-build` で build を省略） |
-| `npm run toyo:export-enrollment` | 履修登録確認表のみ取得・整形 |
+| `npm run toyo:export-enrollment` | 履修登録確認表のみ取得・整形（`registration-data.json` と `registration-summary.md`） |
 | `npm run toyo:syllabus -- --course-code <code>` | 指定授業のシラバスを取得（学期内キャッシュあり） |
 | `npm run toyo:syllabus:seed [-- --force] [--course-code <code>]` | シラバスの本文から、登録中科目の `output/toyo/syllabus/<授業コード>.json/.md` を書き出す（ブラウザ不要）。入力は `--from <ファイル>` が無ければ `output/toyo/syllabus-pool/` → 最新の `registration-candidates.json` の順。既存は `--force` で上書き。`--course-code` で対象を絞る |
 | `npm run toyo:build` | 組み立て層をまとめて実行: `course-index.json` → `summary.json` → `agent-context.{json,md}`（各段 1 行サマリ）。取得層の出力ファイルを読むだけで、ネットワークもブラウザも使わない（純粋処理）。データの欠け（シラバス・ACE 未反映・評価ルール）は index と agent-context の Warnings に出し、失敗にはしない。どのジョブも取得のあとにこれを呼ぶ |
@@ -49,7 +48,6 @@ npm run toyo:sync
 | `npm run toyo:announcements` | ACEのコースニュース（休講・補講・教室変更含む）のみ取得 |
 | `npm run toyo:coursework [-- --no-build]` | ACE の全 2026 年度コースの提出状況を取得（`_report` / `_query` / `_survey` / `_grade` と提出記録 30 日）→ `output/toyo/toyonet-ace-coursework.json`。授業コードで `registration-data.json` と突き合わせる。取得後に `toyo:build` を実行（`--no-build` で省略）。`toyo-coursework` タイマー（毎時 :20）用 |
 | `npm run toyo:calendar` | 内閣府CSVから祝日データを取得 |
-| `npm run toyo:run` | セッション疎通確認用の最小ランナー |
 | `npm run toyo:context [-- --print]` | エージェントが最初に読む圧縮コンテキストを `output/toyo/agent-context.{md,json}` に生成（`toyo:build` の最後の段だけを単独で実行する薄い CLI。取得も sync もしない）。標準出力は 1 行サマリのみ（全文は `--print`、JSON は `--print --format json`） |
 | `npm run toyo:candidates [-- --syllabus] [--add] [--refresh-pool]` | 履修登録画面の全コマから登録可能な科目一覧を取得（`--syllabus` で夜間・集中科目のシラバスも取得、`--syllabus=all` で全科目）。保存先は `registration-candidates.json`（最新）と `registration-candidates.<regular\|add>.json`（期間別）。取得したシラバス本文は `syllabus-pool/<授業コード>.json` にも貯める（既存は上書きしない。`--refresh-pool` で上書き） |
 | `npm run toyo:lottery` | 抽選実施科目一覧と当落（○/×）を取得（登録成功は確定ではない。落選科目は履修から削除される） |
@@ -71,7 +69,6 @@ npm run toyo:sync
 | `output/toyo/toyonet-ace-coursework.json` | ACE のコース別提出状況。`courses[].items`（type: report/query/survey、status: open/waiting/closed/unknown、submitted: true/false/null、opensAt/dueAt）、`counts`（report+query のみ。アンケートは除く）、`grades`、トップレベルの `submissions`（提出記録 30 日）。drill（Web最終テスト）は query 扱い |
 | `output/toyo/registration-data.json` | 履修登録確認表（`fetchStatus: success/error/empty`） |
 | `output/toyo/registration-summary.md` | 履修まとめ（人間向け） |
-| `output/spreadsheet/toyo-timetable.xlsx` | 時間割スプレッドシート |
 | `output/toyo/syllabus/<授業コード>.json` | シラバス（学期内キャッシュ） |
 | `output/toyo/toyonet-ace-assignments.json` | 未提出課題一覧 |
 | `output/toyo/toyonet-ace-contents.json` | コース掲示資料 |
@@ -136,15 +133,6 @@ npm run toyo:lottery                     # 抽選実施科目の当落を確認
 - [`docs/toyo-automation-runbook.md`](docs/toyo-automation-runbook.md) — 運用手順、セッション喪失時の回復、情報ソースのルーティング表
 - [`.claude/commands/toyo.md`](.claude/commands/toyo.md) — LLM用Skill定義（決定フロー・回答テンプレート）
 
-## スプレッドシート出力（Python依存）
-
-履修エクスポートは Python virtual env 経由で `.xlsx` を生成します。
-
-```bash
-uv venv .venv
-uv pip install --python .venv/bin/python openpyxl pandas
-```
-
 ## 想定ワークフロー
 
 1. `npm run toyo:login` を一度実行してログインを完了する
@@ -153,6 +141,6 @@ uv pip install --python .venv/bin/python openpyxl pandas
 4. エージェントに授業相談を投げる前に `npm run toyo:context` で圧縮コンテキストを生成
 5. 定期ジョブ（systemd タイマー、`deploy/README.md`）が自動で同期・配信し、失敗が続くと `toyo:health` が通知する
 
-`toyo:context` は取得も sync もしません（`--no-sync` は互換のため受け付けて無視します）。`summary.json` が 30 分より古いときは Warnings と `freshness.stale` に出るだけなので、最新にしたいときは `npm run toyo:sync` → `npm run toyo:build` の順に実行します。標準出力は `[context] <JST> today=n tomorrow=m warnings=k` の 1 行だけで（journal を汚さないため）、全文は `output/toyo/agent-context.md` を読むか `--print` を付けます。JSON を標準出力したい場合は `npm --silent run toyo:context -- --print --format json` です。定期ジョブが失敗中・停止中のときは Warnings に載ります。
+`toyo:context` は取得も sync もしません。`summary.json` が 30 分より古いときは Warnings と `freshness.stale` に出るだけなので、最新にしたいときは `npm run toyo:sync` → `npm run toyo:build` の順に実行します。標準出力は `[context] <JST> today=n tomorrow=m warnings=k` の 1 行だけで（journal を汚さないため）、全文は `output/toyo/agent-context.md` を読むか `--print` を付けます。JSON を標準出力したい場合は `npm --silent run toyo:context -- --print --format json` です。定期ジョブが失敗中・停止中のときは Warnings に載ります。
 
 ポータルが `システムエラー` / `タイムアウトしました。` / SSOログイン画面 / 多要素認証設定画面 のいずれかを返した場合はログイン喪失として扱います。共通ヘルパー `detectToyoSessionLoss` / `recoverToyoSessionIfNeeded` (`scripts/lib/toyo.ts`) が自動回復を試み、失敗した場合は手動再ログインを案内します。詳細は `docs/toyo-automation-runbook.md` を参照。

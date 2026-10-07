@@ -6,8 +6,8 @@ Type=oneshot
 WorkingDirectory=/home/penne/dev/scratch/toyo-univ-analyze
 Environment=PATH=/home/penne/.volta/bin:/usr/bin:/bin
 # Playwright セッションは同時に 1 つ。watch / daily が実行中ならロック解放を最大 10 分待つ
-# coursework は取得後に summary.json も再生成する。context → publish までを 1 ユニットで流す
-ExecStart=/usr/bin/flock -w 600 /tmp/toyo-fetch.lock /usr/bin/bash -c 'npm run toyo:coursework && npm run toyo:context -- --no-sync && npm run toyo:publish'
+# toyo:coursework は取得後に toyo:build（index → summary → context）まで実行する。そのあと publish までを 1 ユニットで流す
+ExecStart=/usr/bin/flock -w 600 /tmp/toyo-fetch.lock /usr/bin/bash -c 'npm run toyo:coursework && npm run toyo:publish'
 TimeoutStartSec=900
 # 成否を記録し、連続失敗が閾値に達したら通知する（失敗しても本体の結果は変えないので `-` 付き）
 ExecStopPost=-/usr/bin/bash deploy/toyo-health-hook.sh coursework

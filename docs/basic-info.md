@@ -11,7 +11,6 @@
 
 - 履修まとめ: `output/toyo/registration-summary.md`
 - 構造化データ: `output/toyo/registration-data.json`
-- 時間割ファイル: `output/spreadsheet/toyo-timetable.xlsx`
 
 ## 公式リンク
 

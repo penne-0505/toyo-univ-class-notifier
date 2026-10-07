@@ -40,7 +40,6 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 
 - Node.js（`fetch`・`node:fs/promises`・`node:child_process` が利用可能なバージョン。global `fetch` を直接使用するため Node 18 以降）
 - TypeScript は実行時トランスパイルせず `tsx` で直接実行する。`package.json` は `"type": "commonjs"` とし、各スクリプトは `import` 構文と `require.main === module` ガードを併用する（tsx の CJS 実行を前提）
-- Python 3.x（仮想環境 `.venv/`、パスは `<repoRoot>/.venv/bin/python` 固定で参照）
 
 ### 2.2 npm 依存関係
 
@@ -51,11 +50,7 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 | `typescript` (`^6.0.2`) | 型チェック（`tsc --noEmit`） |
 | `@types/node` | Node 型定義 |
 
-### 2.3 Python 依存関係
-
-`.venv` に `openpyxl` をインストールすること（時間割 `.xlsx` 生成に使用）。
-
-### 2.4 ブラウザ
+### 2.3 ブラウザ
 
 - 実行バイナリはシステムインストールの Chrome を使う。既定パス `/opt/google/chrome/chrome`
 - Playwright 同梱 Chromium ではなく `executablePath` 指定で起動する
@@ -83,7 +78,6 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 |---|---|---|
 | `output/toyo/registration-data.json` | 履修取得 | 履修登録確認表の構造化データ |
 | `output/toyo/registration-summary.md` | 同上 | 人間向け Markdown |
-| `output/spreadsheet/toyo-timetable.xlsx` | Python ビルダ | 時間割スプレッドシート |
 | `output/toyo/syllabus/<stem>.json` / `.md` | シラバス取得 | 学期内キャッシュとしても機能 |
 | `output/toyo/toyonet-ace-assignments.json` | ACE 課題取得 | 未提出課題一覧 |
 | `output/toyo/toyonet-ace-contents.json` | ACE コンテンツ取得 | コース掲示資料 |
@@ -120,11 +114,9 @@ toyo:build ───┬──→ index ──→ course-index.json（科目の�
 | コマンド | エントリポイント | 概要 |
 |---|---|---|
 | `typecheck` | `tsc --noEmit` | 型チェック |
-| `toyo:login` | `scripts/toyo-login.ts` | 専用プロファイルで GUI ログインし storageState を保存 |
-| `toyo:refresh-session` | 同上（別名） | セッション期限切れ時の再ログイン |
+| `toyo:login` | `scripts/toyo-login.ts` | 専用プロファイルで GUI ログインし storageState を保存（セッション期限切れ時の再ログインにも使う） |
 | `toyo:check` | `scripts/toyo-check.ts` | 保存セッションの有効性を確認 |
-| `toyo:run` | `scripts/toyo-run.ts` | セッション疎通確認の最小ランナー |
-| `toyo:export-enrollment` | `scripts/toyo-export-enrollment.ts` | 履修登録確認表のみ取得 + xlsx 生成 |
+| `toyo:export-enrollment` | `scripts/toyo-export-enrollment.ts` | 履修登録確認表のみ取得（JSON と Markdown を出力） |
 | `toyo:syllabus` | `scripts/toyo-fetch-syllabus.ts` | 指定科目のシラバス取得 |
 | `toyo:calendar` | `scripts/toyo-fetch-calendar.ts` | 祝日データ取得 |
 | `toyo:announcements` | `scripts/toyo-fetch-announcements.ts` | ACE コースニュース取得 |
@@ -276,10 +268,9 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 - 科目一覧は曜日順（月→日）、時限昇順、科目名 `ja` ロケール順にソート
 - 構成: 見出し・メタ情報（取得日時/参照元/学籍番号/氏名/開講年度/登録科目数/登録単位数合計）、`## 集計`（曜日別・実施形態別・キャンパス別の件数を `ja` ソート）、`## 履修科目一覧`（11 列の Markdown 表）、`## メモ`（出典注記の固定文）
 
-#### 成果物書き出し・xlsx 起動
+#### 成果物書き出し
 
 - `writeEnrollmentArtifacts(data)`: `registration-data.json`（2 スペース整形 JSON）と `registration-summary.md` を書き出す
-- `runPythonWorkbookBuilder()`: `<repoRoot>/.venv/bin/python scripts/toyo-build-timetable.py <registration-data.json> <toyo-timetable.xlsx>` を `stdio: inherit` で spawn。終了コード非 0 で reject
 
 ### 7.3 `lib/toyonet-ace.ts` — ACE 課題・コースコンテンツ
 
@@ -487,35 +478,11 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 
 `build/` 配下（`course-index.ts` / `course-lookup.ts` / `summary.ts` / `context.ts` / `context-markdown.ts`）が Playwright・`lib/toyo.ts`・`lib/toyo-enrollment.ts`・`fetch(` を使っていないことは `scripts/dev/course-index.test.ts` が検査する。
 
-### 7.8 `toyo-build-timetable.py` — 時間割 xlsx 生成
-
-`Usage: toyo-build-timetable.py <input-json> <output-xlsx>`（引数過不足は終了コード 1）。
-
-`registration-data.json` を読み、openpyxl で以下の構成のワークブックを生成する。
-
-- シート名 `時間割`、`freeze_panes = "B4"`、グリッド線非表示
-- `A1:G1` 結合: `<開講年度>年度 履修時間割`（太字・白・16pt・背景 `4C6EF5`・中央揃え、行高 28）
-- `A2:G2` 結合: `<氏名> (<学籍番号>)  /  小学校の時間割ふう`（太字・`1F2937`・11pt・背景 `EEF2FF`、行高 22）
-- 3 行目: `A3=時限`（背景 `F1F3F5`）、`B3:G3` に曜日 `月,火,水,木,金,土`（曜日色: 月 `FFF3BF`、火 `D3F9D8`、水 `D0EBFF`、木 `FFE8CC`、金 `E5DBFF`、土 `FFCCD5`）
-- 列幅: `A=9`、`B〜G=24`。全セルに細罫線（`8A8F98`）
-- 4〜10 行目: `A` 列に `N限`（1〜7、背景 `FFF0F6`、行高 68）。各曜日セルは中央揃え・折り返し
-- 科目配置: `day`/`period`（全角数字は半角化）が表内に収まるもののみ。セル内容は 5 行テキスト:
-  1. 科目名
-  2. `<numbering> / <courseCode>`
-  3. 担当者（空なら `担当者未設定`）
-  4. `<room>・<campus>`（room 空なら `教室未設定`）
-  5. `<実施形態> / <単位>単位`（実施形態空なら `未設定`）
-  - セル背景: 実施形態による（`対面`=FFF9DB、`非オ`=E3FAFC、`非同`=E7F5FF、その他=FFFFFF）
-  - フォント: Meiryo 10pt 太字
-- 12 行目: `A:G` 結合で `履修サマリー`（背景 `F1F3F5`、行高 22）
-- 13〜16 行目: 各 `A:G` 結合で `登録科目数: N件`、`登録単位数: N単位`、`実施形態: <形態> N件 / ...`（形態名ソート）、`注: 学務ポータルの「履修登録確認表照会」をもとに作成`
-- 出力パスの親ディレクトリを作成して保存し、出力パスを標準出力に表示
-
 ## 8. エントリポイント仕様
 
 全スクリプト共通: `main()` を export し、`require.main === module` ガード下で実行。catch でスタックまたはメッセージを stderr に出力し `process.exit(1)`。
 
-### 8.1 `toyo-login.ts`（`toyo:login` / `toyo:refresh-session`）
+### 8.1 `toyo-login.ts`（`toyo:login`）
 
 - headless 既定は **false**（headed）。headed かつ `DISPLAY`/`WAYLAND_DISPLAY` 未設定なら即例外
 - `launchPersistentBrowser` で専用プロファイル起動 → `gotoPortal`
@@ -528,16 +495,11 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 - `isLoginUrl` なら未認証メッセージを表示し **終了コード 2**
 - 認証中なら現在 URL とタイトルを表示
 
-### 8.3 `toyo-run.ts`（`toyo:run`）
+### 8.3 `toyo-export-enrollment.ts`（`toyo:export-enrollment`）
 
-- `launchStateContext` → `gotoPortal` → `isLoginUrl` なら例外（再ログインを案内）
-- スナップショット `portal-run` → `saveSessionState` で鮮度更新 → パス表示
+出力ディレクトリ確保 → `scrapeEnrollmentData` → `writeEnrollmentArtifacts` → 2 つの出力パス（JSON・Markdown）を表示。時間割の Excel（xlsx）出力は廃止した。
 
-### 8.4 `toyo-export-enrollment.ts`（`toyo:export-enrollment`）
-
-出力ディレクトリ確保 → `scrapeEnrollmentData` → `writeEnrollmentArtifacts` → `runPythonWorkbookBuilder` → 3 つの出力パスを表示。
-
-### 8.5 `toyo-sync.ts`（`toyo:sync`）
+### 8.4 `toyo-sync.ts`（`toyo:sync`）
 
 1. `scrapeEnrollmentData` → `writeEnrollmentArtifacts`
 2. ACE 課題・コンテンツ・お知らせ・祝日を直列に取得（Playwright セッションは同時に 1 つ）。ACE の各取得が不調でも警告を出して続行し（結果は `summary.json` の `sourceStatus` / `errors` と agent-context の Warnings に出る）、カレンダー失敗も非致命。失敗とみなすのは履修登録確認表の取得が落ちたときだけ
@@ -545,19 +507,19 @@ body テキスト取得は `innerText({ timeout: 5000 })`、失敗時は空文�
 4. シラバスは取得しない（daily の「index の欠けの補完」か `toyo:syllabus` / `toyo:syllabus:seed`）
 5. `fetchStatus === 'error'` は警告表示。最後に 1 行サマリを表示
 
-### 8.6 `toyo-fetch-calendar.ts`（`toyo:calendar`）
+### 8.5 `toyo-fetch-calendar.ts`（`toyo:calendar`）
 
 - `registration-data.json` の `academicYear` を読む（不在時は現在年）
 - `fetchAcademicCalendar` 実行 → エラー・取得件数・出力パスを表示
 - `available === false` なら終了コード 1
 
-### 8.7 `toyo-fetch-announcements.ts`（`toyo:announcements`）
+### 8.6 `toyo-fetch-announcements.ts`（`toyo:announcements`）
 
 - `registration-data.json` から科目名一覧を読み `collectToyoNetAceAnnouncements` に渡す
 - エラー・件数・各 `[category] title (targetDate)`・出力パスを表示
 - `available === false` なら終了コード 1
 
-### 8.8 `toyo-fetch-syllabus.ts`（`toyo:syllabus`）
+### 8.7 `toyo-fetch-syllabus.ts`（`toyo:syllabus`）
 
 CLI:
 
@@ -579,7 +541,7 @@ CLI:
   - JSON: `{ fetchedAt, inputCourse, syllabus }`
   - Markdown: 科目名見出し + メタ情報箇条書き（取得日時/授業コード/担当者/時間割/教室/授業形態/実施形態/参照元）+ 固定セクション `学修到達目標` `講義スケジュール` `指導方法` `事前・事後学修` `成績評価` `テキスト`（空は `(空)`）
 
-### 8.9 `toyo-context.ts`（`toyo:context`）と `toyo-build.ts`（`toyo:build`）
+### 8.8 `toyo-context.ts`（`toyo:context`）と `toyo-build.ts`（`toyo:build`）
 
 `toyo:build` は index → summary → context を順に作る（各段 1 行サマリ）。取得はしない。`toyo:context` は最後の段だけを単独で実行する薄い CLI で、ファイルを読んで `build/context.ts`（文脈データの組み立て、純粋）と `build/context-markdown.ts`（Markdown 整形、純粋）に渡し、書き出すだけ。
 
@@ -851,7 +813,7 @@ CLI（`toyo:context`）:
 1. `npm run typecheck` がエラーなく通る
 2. `npm run toyo:login`（GUI 環境）で `toyo-state.json`・`toyo-session.json` が生成される
 3. `npm run toyo:check` が認証中に終了コード 0、未認証で 2 を返す
-4. `npm run toyo:export-enrollment` で `registration-data.json`・`registration-summary.md`・`toyo-timetable.xlsx` が生成される
+4. `npm run toyo:export-enrollment` で `registration-data.json`・`registration-summary.md` が生成される
 5. `npm run toyo:sync` で §9 の全出力が生成され、`summary.json` が `sourceStatus` を含む
 6. `npm run toyo:syllabus -- --list` が科目一覧を表示し、`--course-code` で `syllabus/<code>.json`・`.md` が生成される
 7. `npm run toyo:build` で `course-index.json`・`summary.json`・`agent-context.json`・`.md` が生成される（取得はせず、古さは freshness と warnings に出る）
