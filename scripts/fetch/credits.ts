@@ -108,10 +108,11 @@ export function parseCreditSummary(text: string): Pick<CreditSummaryData, 'requi
       const parts = line.split('\t');
       if (parts.length < 6) continue;
       const rawName = parts[0];
-      const depth = (rawName.match(/^[　 ]*/)?.[0].length ?? 0) / 1;
+      // 階層は先頭の全角空白の数で表される（1 個 = 1 段）
+      const depth = rawName.match(/^[　 ]*/)?.[0].length ?? 0;
       requirements.push({
         name: rawName.trim(),
-        depth: Math.round(depth / 2),
+        depth,
         required: toNumber(parts[1]),
         earned: toNumber(parts[2]),
         inProgress: toNumber(parts[3]),
