@@ -1,0 +1,40 @@
+import fs from 'node:fs/promises';
+import { jsonOutputPath, type EnrollmentData } from './toyo-enrollment';
+import {
+  collectToyoNetAceAnnouncements,
+  announcementsOutputPath,
+} from './toyo-announcements';
+
+async function readCourseNames(): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(jsonOutputPath, 'utf8');
+    const data = JSON.parse(raw) as EnrollmentData;
+    return data.courses.map((c) => c.courseName);
+  } catch {
+    return [];
+  }
+}
+
+export async function main(): Promise<void> {
+  const courseNames = await readCourseNames();
+  console.log(`Collecting ACE announcements (${courseNames.length} registered courses)...`);
+
+  const result = await collectToyoNetAceAnnouncements(courseNames);
+
+  if (result.errors.length > 0) {
+    console.error('Errors:');
+    for (const error of result.errors) {
+      console.error(` - ${error}`);
+    }
+  }
+
+  console.log(`Announcements collected: ${result.announcements.length}`);
+  for (const a of result.announcements) {
+    console.log(` [${a.category}] ${a.title}${a.targetDate ? ` (${a.targetDate})` : ''}`);
+  }
+  console.log(`Announcements output: ${announcementsOutputPath}`);
+
+  if (!result.available) {
+    process.exit(1);
+  }
+}

@@ -18,9 +18,9 @@ import {
 import { gradingRulesPath, type GradingRule, type GradingRulesFile } from '../lib/toyo-grading-rules';
 import { outputDir, registrationDataPath, repoRoot } from '../lib/toyo-paths';
 import { summaryOutputPath, type DetailedClassSummary, type Summary } from './summary';
-import type { Announcement } from '../lib/toyo-announcements';
-import type { EnrollmentData } from '../lib/toyo-enrollment';
-import type { Assignment, CourseContent } from '../lib/toyonet-ace';
+import type { Announcement } from '../fetch/toyo-announcements';
+import type { EnrollmentData } from '../fetch/toyo-enrollment';
+import type { Assignment, CourseContent } from '../fetch/toyonet-ace';
 
 export type AcademicCalendar = {
   fetchedAt?: string;

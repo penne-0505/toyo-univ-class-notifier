@@ -6,7 +6,7 @@ import { outputDir } from './toyo-paths';
 /**
  * シラバスのキャッシュ（output/toyo/syllabus/<授業コード>.json）の型と読み出し。
  * playwright に依存しないので、組み立て層（scripts/build/）の入力を読む側からも使える。
- * 書き込み（取得結果の保存）は toyo-fetch-syllabus.ts の writeSyllabusArtifacts。
+ * 書き込み（取得結果の保存）は fetch/syllabus.ts の writeSyllabusArtifacts。
  */
 
 export const syllabusCacheDir = path.join(outputDir, 'syllabus');

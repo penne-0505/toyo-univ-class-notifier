@@ -1,21 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  ensureEnrollmentOutputDirs,
-  jsonOutputPath,
-  markdownOutputPath,
-  scrapeEnrollmentData,
-  writeEnrollmentArtifacts,
-} from './lib/toyo-enrollment';
-
-export async function main(): Promise<void> {
-  await ensureEnrollmentOutputDirs();
-  const data = await scrapeEnrollmentData();
-  await writeEnrollmentArtifacts(data);
-
-  console.log(`Enrollment data: ${jsonOutputPath}`);
-  console.log(`Markdown summary: ${markdownOutputPath}`);
-}
+import { main } from './fetch/export-enrollment';
 
 if (require.main === module) {
   void main().catch((error: unknown) => {

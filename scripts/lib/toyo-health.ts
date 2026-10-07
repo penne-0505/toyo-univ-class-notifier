@@ -4,7 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { repoRoot } from './toyo-env';
-import { putFileToApi } from './toyo-api';
+import { putFileToApi } from '../publish/toyo-api';
 import { notify, redactSensitive, type NotifyResult } from './toyo-notify';
 
 const execFileAsync = promisify(execFile);
@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 /**
  * 定期ジョブ（systemd タイマー）の成否を記録し、失敗が続いたら通知する。
  * 状態は state/health.json（正本）、公開用の写しは output/toyo/health.json。
- * 目的の違いにより toyo-watch.ts 独自の state/watch-state.json（バックオフ用）とは別に持つ。
+ * 目的の違いにより jobs/watch.ts 独自の state/watch-state.json（バックオフ用）とは別に持つ。
  */
 
 export const JOB_NAMES = ['watch', 'coursework', 'daily'] as const;

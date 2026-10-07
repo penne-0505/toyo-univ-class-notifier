@@ -260,7 +260,7 @@ export type Summary = {
   errors: string[];
 };
 
-/** ~/toyo-data/meta.json（scripts/toyo-publish.ts が生成） */
+/** ~/toyo-data/meta.json（scripts/publish/publish.ts が生成） */
 export type PublishMeta = {
   publishedAt: string;
   files: Record<string, { fetchedAt: string | null; source: string }>;

@@ -1,8 +1,8 @@
-import { loadProjectEnv } from './toyo-env';
+import { loadProjectEnv } from '../lib/toyo-env';
 
 /**
  * Worker（toyo-data-api）への書き込み用の共通ヘルパー。
- * toyo-publish.ts と toyo-health.ts が使う。TOYO_API_URL / TOYO_API_WRITE_KEY が無ければ何もしない。
+ * publish/publish.ts と lib/toyo-health.ts が使う。TOYO_API_URL / TOYO_API_WRITE_KEY が無ければ何もしない。
  */
 
 export type ApiConfig = { baseUrl: string; key: string };

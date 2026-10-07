@@ -18,9 +18,9 @@ import {
 } from '../lib/coursework-model';
 import { findSyllabus, type SyllabusMap, type SyllabusRecord } from '../lib/syllabus-cache';
 import { outputDir, registrationDataPath } from '../lib/toyo-paths';
-import type { Announcement, AnnouncementCollectionResult } from '../lib/toyo-announcements';
-import type { Course, EnrollmentData } from '../lib/toyo-enrollment';
-import type { Assignment, AssignmentCollectionResult, CourseContent, CourseContentCollectionResult } from '../lib/toyonet-ace';
+import type { Announcement, AnnouncementCollectionResult } from '../fetch/toyo-announcements';
+import type { Course, EnrollmentData } from '../fetch/toyo-enrollment';
+import type { Assignment, AssignmentCollectionResult, CourseContent, CourseContentCollectionResult } from '../fetch/toyonet-ace';
 import type { CourseIndex } from './course-index';
 import { aceCourseIdFrom, createCourseResolver, type CourseRef } from './course-lookup';
 

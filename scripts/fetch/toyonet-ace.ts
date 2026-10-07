@@ -2,14 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { type Page } from 'playwright';
 import { outputDir, repoRoot } from './toyo-enrollment';
-import { courseKey } from './course-key';
+import { courseKey } from '../lib/course-key';
 import {
   collectPortalSnapshot,
   getOrCreatePage,
   launchStateContext,
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
-} from './toyo';
+} from '../lib/toyo';
 
 export type AssignmentStatus = 'pending' | 'submitted' | 'unknown';
 

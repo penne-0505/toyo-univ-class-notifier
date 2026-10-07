@@ -1,12 +1,12 @@
 import { type Page } from 'playwright';
 import { type Course } from './toyo-enrollment';
-import { type SyllabusRecord } from './syllabus-cache';
+import { type SyllabusRecord } from '../lib/syllabus-cache';
 import {
   getOrCreatePage,
   launchStateContext,
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
-} from './toyo';
+} from '../lib/toyo';
 
 type TimetableCandidate = {
   rowIndex: number;
@@ -25,7 +25,7 @@ type SyllabusPageSnapshot = {
   sections: Record<string, string>;
 };
 
-export type { SyllabusRecord } from './syllabus-cache';
+export type { SyllabusRecord } from '../lib/syllabus-cache';
 
 export type SyllabusLookupInput = Pick<
   Course,

@@ -5,8 +5,8 @@ import {
   launchStateContext,
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
-} from './toyo';
-import { dataDir, outputDir, registrationDataPath, repoRoot } from './toyo-paths';
+} from '../lib/toyo';
+import { dataDir, outputDir, registrationDataPath, repoRoot } from '../lib/toyo-paths';
 
 export type Course = {
   semesterLabel: string;

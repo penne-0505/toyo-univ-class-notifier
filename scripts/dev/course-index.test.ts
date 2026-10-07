@@ -1,6 +1,6 @@
 /**
- * buildCourseIndex の突き合わせと警告、および組み立て層（scripts/build/ 全体）が
- * Playwright・ネットワーク・ブラウザ系のモジュールに依存しないことの検査。
+ * buildCourseIndex の突き合わせと警告、および組み立て層（scripts/build/ 全体）と
+ * scripts/lib/ の純粋モジュールが Playwright・ネットワーク・ブラウザ系のモジュールに依存しないことの検査。
  * Usage: npx tsx --test scripts/dev/course-index.test.ts
  */
 import assert from 'node:assert/strict';
@@ -9,10 +9,23 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { buildCourseIndex, type CourseIndexInputs } from '../build/course-index';
 // 組み立て層の全モジュールを読み込む（下の「依存」の検査で、これらを読み込んでも playwright が読み込まれないことを見る）
+import '../build/academic-schedule';
 import '../build/context';
 import '../build/context-markdown';
 import '../build/course-lookup';
+import '../build/grading-rules';
 import '../build/summary';
+// scripts/lib/ の純粋モジュール（下の「lib の純粋モジュール」の検査対象。読み込んでも playwright が読み込まれないことを見る）
+import '../lib/course-code';
+import '../lib/course-key';
+import '../lib/coursework-model';
+import '../lib/syllabus-cache';
+import '../lib/syllabus-pool';
+import '../lib/toyo-academic-schedule';
+import '../lib/toyo-env';
+import '../lib/toyo-grading-rules';
+import '../lib/toyo-normalize';
+import '../lib/toyo-paths';
 import { inferScheduleCd } from '../lib/course-code';
 
 const schedule = {
@@ -106,48 +119,55 @@ describe('buildCourseIndex', () => {
   });
 });
 
+/**
+ * scripts/lib/ のうち、playwright・ネットワーク・ブラウザ系に触れない純粋なモジュール。
+ * 組み立て層（scripts/build/）はこの中のものだけを値として import できる。
+ * lib/toyo（ブラウザ）、toyo-health（→ publish/toyo-api のネットワーク）、toyo-notify（プロセス起動）は含めない。
+ */
+const pureLibs = new Set([
+  'course-code',
+  'course-key',
+  'coursework-model',
+  'syllabus-cache',
+  'syllabus-pool',
+  'toyo-academic-schedule',
+  'toyo-env',
+  'toyo-grading-rules',
+  'toyo-normalize',
+  'toyo-paths',
+]);
+
+const stripComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/** 値として読み込まれる import / re-export の指定子。`import type` と `{ type A }` だけの import は実行時に消えるので除く。 */
+function valueImports(source: string): string[] {
+  const out: string[] = [];
+  for (const m of stripComments(source).matchAll(/^\s*(import|export)\s+(type\s+)?([^;]*?)\s*from\s+['"]([^'"]+)['"]/gms)) {
+    if (m[2]) continue;
+    const braces = /^\{([^}]*)\}$/.exec(m[3].trim());
+    if (braces) {
+      const names = braces[1].split(',').map((n) => n.trim()).filter(Boolean);
+      if (names.length > 0 && names.every((n) => n.startsWith('type '))) continue;
+    }
+    out.push(m[4]);
+  }
+  return out;
+}
+
 describe('組み立て層の依存（scripts/build/ 全体）', () => {
   const buildDir = path.resolve(__dirname, '..', 'build');
   const files = fs.readdirSync(buildDir).filter((f) => f.endsWith('.ts'));
-  /** 組み立て層が値として import してよい lib/ のモジュール（playwright・ネットワークに触れないもの） */
-  const pureLibs = new Set([
-    'course-code',
-    'course-key',
-    'coursework-model',
-    'syllabus-cache',
-    'toyo-academic-schedule',
-    'toyo-grading-rules',
-    'toyo-normalize',
-    'toyo-paths',
-  ]);
-
-  const stripComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-
-  /** 値として読み込まれる import / re-export の指定子。`import type` と `{ type A }` だけの import は実行時に消えるので除く。 */
-  function valueImports(source: string): string[] {
-    const out: string[] = [];
-    for (const m of stripComments(source).matchAll(/^\s*(import|export)\s+(type\s+)?([^;]*?)\s*from\s+['"]([^'"]+)['"]/gms)) {
-      if (m[2]) continue;
-      const braces = /^\{([^}]*)\}$/.exec(m[3].trim());
-      if (braces) {
-        const names = braces[1].split(',').map((n) => n.trim()).filter(Boolean);
-        if (names.length > 0 && names.every((n) => n.startsWith('type '))) continue;
-      }
-      out.push(m[4]);
-    }
-    return out;
-  }
 
   it('scripts/build/ に 5 つ以上のモジュールがある（検査対象の取りこぼし防止）', () => {
     assert.ok(files.length >= 5, files.join(', '));
   });
 
-  it('組み立て層を読み込んでも playwright は読み込まれない', () => {
+  it('組み立て層と純粋な lib を読み込んでも playwright は読み込まれない', () => {
     const resolved = Object.keys(require.cache).filter((file) => /node_modules\/(?:playwright|playwright-core)\//.test(file));
     assert.deepEqual(resolved, []);
   });
 
-  it('値の import は Node 標準・同じディレクトリ・純粋な lib/ に限る（playwright / lib/toyo / toyo-enrollment / toyo-*.ts の CLI は不可）', () => {
+  it('値の import は Node 標準・同じディレクトリ・純粋な lib/ に限る（playwright / lib/toyo / fetch/ / publish/ / jobs/ は不可）', () => {
     for (const name of files) {
       const source = fs.readFileSync(path.join(buildDir, name), 'utf8');
       for (const spec of valueImports(source)) {
@@ -166,7 +186,33 @@ describe('組み立て層の依存（scripts/build/ 全体）', () => {
   });
 
   it('値の import が許可リスト外なら検出できる（検査自体の確認）', () => {
-    const bad = "import { launchStateContext } from '../lib/toyo';\nimport { type Course } from '../lib/toyo-enrollment';\nimport type { X } from 'playwright';";
+    const bad = "import { launchStateContext } from '../lib/toyo';\nimport { type Course } from '../fetch/toyo-enrollment';\nimport type { X } from 'playwright';";
     assert.deepEqual(valueImports(bad), ['../lib/toyo']);
+  });
+});
+
+describe('lib の純粋モジュール（scripts/lib/）', () => {
+  const libDir = path.resolve(__dirname, '..', 'lib');
+
+  it('pureLibs の各モジュールが実在する（名前の取りこぼし・改名の検出）', () => {
+    for (const name of pureLibs) assert.ok(fs.existsSync(path.join(libDir, `${name}.ts`)), `${name}.ts が scripts/lib/ に無い`);
+  });
+
+  it('値の import は Node 標準と、pureLibs 同士に限る（playwright / lib/toyo / toyo-health / toyo-notify / fetch / publish は不可）', () => {
+    for (const name of pureLibs) {
+      const source = fs.readFileSync(path.join(libDir, `${name}.ts`), 'utf8');
+      for (const spec of valueImports(source)) {
+        if (spec.startsWith('node:')) continue;
+        const sibling = /^\.\/([^/]+)$/.exec(spec);
+        assert.ok(sibling && pureLibs.has(sibling[1]), `lib/${name}.ts: 純粋な lib から値として import できない: ${spec}`);
+      }
+    }
+  });
+
+  it('fetch( を呼ばない', () => {
+    for (const name of pureLibs) {
+      const source = stripComments(fs.readFileSync(path.join(libDir, `${name}.ts`), 'utf8'));
+      assert.ok(!/\bfetch\s*\(/.test(source), `lib/${name}.ts: fetch( を使っている`);
+    }
   });
 });

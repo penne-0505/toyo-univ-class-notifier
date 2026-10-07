@@ -8,7 +8,7 @@ import {
   launchStateContext,
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
-} from './toyo';
+} from '../lib/toyo';
 
 export type AnnouncementCategory = '休講' | '補講' | '教室変更' | 'その他';
 

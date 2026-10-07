@@ -7,9 +7,9 @@ import {
   launchStateContext,
   recoverToyoSessionIfNeeded,
   shouldRunHeadless,
-} from './toyo';
+} from '../lib/toyo';
 import { toJstIso } from './toyonet-ace';
-import { courseKey } from './course-key';
+import { courseKey } from '../lib/course-key';
 import {
   computeCounts,
   type CourseworkCourse,
@@ -19,9 +19,9 @@ import {
   type CourseworkResult,
   type CourseworkStatus,
   type CourseworkSubmission,
-} from './coursework-model';
+} from '../lib/coursework-model';
 
-export * from './coursework-model';
+export * from '../lib/coursework-model';
 
 /**
  * ToyoNet-ACE（manaba）のコース別「提出状況」の収集。
